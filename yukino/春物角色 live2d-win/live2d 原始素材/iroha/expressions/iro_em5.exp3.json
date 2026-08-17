@@ -1,0 +1,57 @@
+{
+	"Type": "Live2D Expression",
+	"FadeInTime": 0.5,
+	"FadeOutTime": 0.5,
+	"Parameters": [
+		{
+			"Id": "PARAM_BROW_L_X",
+			"Value": -0.21,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_L_Y",
+			"Value": -0.2,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_R_X",
+			"Value": 0.51,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_R_Y",
+			"Value": -0.35,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_L_ANGLE",
+			"Value": -0.13,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_R_ANGLE",
+			"Value": -0.16,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_L_FORM1",
+			"Value": -2,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_L_FORM2",
+			"Value": -1,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_R_FORM1",
+			"Value": -2,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_R_FORM2",
+			"Value": -1,
+			"Blend": "Add"
+		}
+	]
+}

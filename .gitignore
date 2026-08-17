@@ -2,3 +2,27 @@ node_modules/
 *.log
 .DS_Store
 Thumbs.db
+.gstack/
+
+# yukino/ 子项目的敏感/运行数据（yukino/.gitignore 已覆盖，此处兜底防误提交）
+yukino/.env.local
+yukino/.env
+yukino/.venv/
+yukino/.venv-avatar/
+yukino/log/
+yukino/logs/
+yukino/tmp/
+yukino/tmp_ref_clips/
+yukino/out/
+yukino/data/
+yukino/novel/
+yukino/GPTV2proplus/
+yukino/Yukino/
+yukino/.agents/
+yukino/.claude/
+yukino/skills-lock.json
+yukino/weight.json
+yukino/scripts/lan_https/*.crt
+yukino/scripts/lan_https/*.key
+yukino/scripts/lan_https/*.csr
+yukino/scripts/lan_https/*.srl

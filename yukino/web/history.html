@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>对话历史 · VoxEMW</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23f77fa8'/></svg>" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+      background: #f6eef2; color: #3a3345;
+      height: 100vh; display: flex; overflow: hidden;
+    }
+    .sidebar {
+      width: 340px; min-width: 280px; background: #fffafd;
+      border-right: 1px solid #f0e6ec; display: flex; flex-direction: column;
+    }
+    .sidebar-header {
+      padding: 18px 16px 12px; border-bottom: 1px solid #f0e6ec;
+    }
+    .sidebar-header h1 { font-size: 18px; color: #3a3345; }
+    .sidebar-header p { font-size: 12px; color: #8a8198; margin-top: 4px; }
+    .conv-list { flex: 1; overflow-y: auto; }
+    .conv-item {
+      padding: 12px 14px; border-bottom: 1px solid #f7edf2;
+      cursor: pointer; transition: background .15s;
+    }
+    .conv-item:hover { background: #fdf2f7; }
+    .conv-item.active { background: #fde4ef; }
+    .conv-title { font-size: 14px; font-weight: 600; margin-bottom: 4px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .conv-meta { font-size: 12px; color: #8a8198;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .conv-last { font-size: 12px; color: #b0a5b8; margin-top: 3px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .main {
+      flex: 1; display: flex; flex-direction: column; background: #fbf5f8;
+    }
+    .main-header {
+      padding: 16px 20px; background: #fffafd; border-bottom: 1px solid #f0e6ec;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .main-header h2 { font-size: 16px; }
+    .main-header .actions button {
+      background: #f77fa8; color: #fff; border: none; border-radius: 8px;
+      padding: 7px 14px; font-size: 13px; cursor: pointer;
+    }
+    .main-header .actions button.danger { background: #e2608f; }
+    .msg-list { flex: 1; overflow-y: auto; padding: 20px; }
+    .msg { max-width: 76%; margin-bottom: 16px; }
+    .msg.user { margin-left: auto; }
+    .msg .bubble {
+      padding: 10px 14px; border-radius: 14px; line-height: 1.65;
+      font-size: 14px; white-space: pre-wrap; word-break: break-word;
+    }
+    .msg.user .bubble { background: #f77fa8; color: #fff; border-top-right-radius: 4px; }
+    .msg.assistant .bubble { background: #fff; border: 1px solid #f0e6ec; border-top-left-radius: 4px; }
+    .msg .trans {
+      margin-top: 6px; padding: 8px 12px; border-radius: 10px;
+      background: #f3edf5; color: #6f6379; font-size: 13px; line-height: 1.6;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .msg .meta { font-size: 11px; color: #b0a5b8; margin-top: 4px; }
+    .empty {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      color: #8a8198; font-size: 14px; flex-direction: column; gap: 8px;
+    }
+    .empty a { color: #f77fa8; }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1>💬 对话历史</h1>
+      <p>SQLite 本地记录 · 点击会话查看</p>
+    </div>
+    <div class="conv-list" id="conv-list"></div>
+  </aside>
+  <main class="main">
+    <div class="main-header">
+      <h2 id="main-title">选择左侧会话</h2>
+      <div class="actions">
+        <button id="refresh-btn" onclick="loadConversations()">刷新</button>
+        <button id="delete-btn" class="danger" onclick="deleteCurrent()">删除当前会话</button>
+      </div>
+    </div>
+    <div class="msg-list" id="msg-list">
+      <div class="empty">← 选择一个会话查看消息<br><a href="/">返回对话页</a></div>
+    </div>
+  </main>
+
+<script>
+"use strict";
+
+let currentSid = null;
+let conversations = [];
+
+async function loadConversations() {
+  const res = await fetch("/api/history");
+  const data = await res.json();
+  if (!data.enabled) {
+    document.getElementById("conv-list").innerHTML =
+      '<div class="empty" style="padding:30px">历史记录未启用</div>';
+    return;
+  }
+  conversations = data.conversations || [];
+  renderConvList();
+}
+
+function renderConvList() {
+  const list = document.getElementById("conv-list");
+  if (!conversations.length) {
+    list.innerHTML = '<div class="empty" style="padding:30px">还没有对话记录</div>';
+    return;
+  }
+  list.innerHTML = "";
+  for (const c of conversations) {
+    const item = document.createElement("div");
+    item.className = "conv-item" + (c.session_id === currentSid ? " active" : "");
+    item.onclick = () => openConversation(c.session_id);
+    const title = document.createElement("div");
+    title.className = "conv-title";
+    title.textContent = c.title || c.session_id;
+    const meta = document.createElement("div");
+    meta.className = "conv-meta";
+    meta.textContent = `${c.updated_at} · ${c.message_count} 条 · ${c.persona || ""}`;
+    const last = document.createElement("div");
+    last.className = "conv-last";
+    last.textContent = c.last_message || "";
+    item.appendChild(title); item.appendChild(meta); item.appendChild(last);
+    list.appendChild(item);
+  }
+}
+
+async function openConversation(sid) {
+  currentSid = sid;
+  renderConvList();
+  const res = await fetch(`/api/history/${sid}`);
+  const data = await res.json();
+  const messages = data.messages || [];
+  document.getElementById("main-title").textContent =
+    (conversations.find((c) => c.session_id === sid) || {}).title || sid;
+  const box = document.getElementById("msg-list");
+  box.innerHTML = "";
+  for (const m of messages) {
+    const wrap = document.createElement("div");
+    wrap.className = "msg " + (m.role === "user" ? "user" : "assistant");
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = m.content;
+    wrap.appendChild(bubble);
+    if (m.translation) {
+      const trans = document.createElement("div");
+      trans.className = "trans";
+      trans.textContent = "译文：" + m.translation;
+      wrap.appendChild(trans);
+    }
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = `${m.role === "user" ? "用户" : "雪乃"} · ${m.created_at}`;
+    wrap.appendChild(meta);
+    box.appendChild(wrap);
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+async function deleteCurrent() {
+  if (!currentSid) return;
+  if (!confirm("删除当前会话记录？此操作不可恢复。")) return;
+  await fetch(`/api/history/${currentSid}`, { method: "DELETE" });
+  currentSid = null;
+  document.getElementById("main-title").textContent = "选择左侧会话";
+  document.getElementById("msg-list").innerHTML =
+    '<div class="empty">会话已删除</div>';
+  await loadConversations();
+}
+
+loadConversations();
+setInterval(loadConversations, 5000);  // 自动刷新会话列表（仅列表，不打断查看）
+</script>
+</body>
+</html>

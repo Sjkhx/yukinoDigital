@@ -1,0 +1,244 @@
+"""orchestrator 纯逻辑单测：session.update 构造与 s2s 事件分类（无需 GPU/ws）。"""
+
+import base64
+
+from voxemw.avatar.orchestrator import (
+    avatar_state_transition,
+    build_session_update,
+    classify_s2s_event,
+    resolve_avatar_routing,
+)
+
+
+def test_build_session_update():
+    event = build_session_update("fengge", "你是峰哥。")
+    assert event["type"] == "session.update"
+    session = event["session"]
+    assert session["instructions"] == "你是峰哥。"
+    assert session["audio"]["output"]["voice"] == "fengge"
+    assert session["audio"]["input"]["turn_detection"]["interrupt_response"] is True
+
+
+def test_classify_audio_delta_ga_name():
+    pcm = b"\x01\x02" * 100
+    event = {"type": "response.output_audio.delta", "delta": base64.b64encode(pcm).decode()}
+    relay, reset, tapped = classify_s2s_event(event)
+    assert relay is True
+    assert reset is False
+    assert tapped == pcm
+
+
+def test_classify_audio_delta_beta_name():
+    pcm = b"\x00" * 64
+    event = {"type": "response.audio.delta", "delta": base64.b64encode(pcm).decode()}
+    _, _, tapped = classify_s2s_event(event)
+    assert tapped == pcm
+
+
+def test_classify_speech_started_resets_avatar():
+    relay, reset, tapped = classify_s2s_event({"type": "input_audio_buffer.speech_started"})
+    assert relay is True
+    assert reset is True
+    assert tapped is None
+
+
+def test_classify_other_events_passthrough():
+    for etype in ("response.done", "session.created", "conversation.item.input_audio_transcription.completed"):
+        relay, reset, tapped = classify_s2s_event({"type": etype})
+        assert relay is True
+        assert reset is False
+        assert tapped is None
+
+
+def _delta_event():
+    return {"type": "response.output_audio.delta",
+            "delta": base64.b64encode(b"\x00" * 64).decode()}
+
+
+def test_transition_first_delta_starts_speech():
+    speaking, msgs = avatar_state_transition(_delta_event(), speaking=False)
+    assert speaking is True
+    assert msgs == [{"type": "speech_active", "on": True}]
+
+
+def test_transition_subsequent_deltas_silent():
+    speaking, msgs = avatar_state_transition(_delta_event(), speaking=True)
+    assert speaking is True
+    assert msgs == []
+
+
+def test_transition_response_done_stops_and_calms():
+    speaking, msgs = avatar_state_transition({"type": "response.done"}, speaking=True)
+    assert speaking is False
+    assert msgs == [{"type": "speech_active", "on": False},
+                    {"type": "idle_mode", "mode": "calm"}]
+
+
+def test_transition_speech_started_interrupts_to_listening():
+    speaking, msgs = avatar_state_transition(
+        {"type": "input_audio_buffer.speech_started"}, speaking=True)
+    assert speaking is False
+    assert msgs == [{"type": "speech_active", "on": False},
+                    {"type": "idle_mode", "mode": "listening"}]
+
+
+def test_transition_speech_stopped_thinking_only_when_not_speaking():
+    _, msgs = avatar_state_transition(
+        {"type": "input_audio_buffer.speech_stopped"}, speaking=False)
+    assert msgs == [{"type": "idle_mode", "mode": "thinking"}]
+    speaking, msgs = avatar_state_transition(
+        {"type": "input_audio_buffer.speech_stopped"}, speaking=True)
+    assert speaking is True and msgs == []
+
+
+def test_transition_ignores_empty_delta():
+    speaking, msgs = avatar_state_transition(
+        {"type": "response.output_audio.delta", "delta": ""}, speaking=False)
+    assert speaking is False and msgs == []
+
+
+def test_resolve_avatar_routing_2dlive():
+    """2dlive：前端本地渲染，无 avatar ws，backend 仍下发 2dlive（状态 on）。"""
+    url, backend = resolve_avatar_routing({"backend": "2dlive"}, {})
+    assert url is None
+    assert backend == "2dlive"
+
+
+def test_resolve_avatar_routing_2dlive_disabled():
+    """2dlive + enabled=false：降级 off（与后端引擎语义一致）。"""
+    url, backend = resolve_avatar_routing({"enabled": False, "backend": "2dlive"}, {})
+    assert url is None
+    assert backend == "off"
+
+
+def test_resolve_avatar_routing_ws_backend():
+    """后端引擎：enabled + 任一 persona 有 ref_image 才建 ws。"""
+    personas = {"y": {"ref_image": "/x.png"}}
+    url, backend = resolve_avatar_routing({"backend": "viseme"}, personas)
+    assert url == "ws://127.0.0.1:8767"
+    assert backend == "viseme"
+
+
+def test_resolve_avatar_routing_no_image_falls_back_off():
+    """无 ref_image（即使 enabled）→ 纯语音降级 off。"""
+    url, backend = resolve_avatar_routing(
+        {"backend": "viseme"}, {"y": {"ref_image": None}})
+    assert url is None
+    assert backend == "off"
+
+
+def test_pick_filler_index_no_repeat():
+    import random
+    from voxemw.avatar.orchestrator import pick_filler_index
+
+    random.seed(42)
+    last = -1
+    for _ in range(200):
+        idx = pick_filler_index(8, last)
+        assert 0 <= idx < 8
+        assert idx != last  # 绝不连续重复
+        last = idx
+
+
+def test_pick_filler_index_single_clip():
+    from voxemw.avatar.orchestrator import pick_filler_index
+
+    assert pick_filler_index(1, 0) == 0  # 只有一条时允许重复
+
+
+def test_load_fillers(tmp_path):
+    import json
+    import wave
+
+    from voxemw.avatar.orchestrator import build_filler_history_item, load_fillers
+
+    fdir = tmp_path / "assets" / "demo" / "fillers"
+    (fdir / "positive").mkdir(parents=True)
+    with wave.open(str(fdir / "a.wav"), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(b"\x01\x02" * 1600)
+    with wave.open(str(fdir / "positive" / "b.wav"), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(b"\x03\x04" * 800)
+    (fdir / "bad.wav").write_bytes(b"not a wav")
+    (fdir / "texts.json").write_text(
+        json.dumps({"a.wav": "嗯——", "positive/b.wav": "哦？"}), encoding="utf-8")
+    groups = load_fillers({"ref_image": str(tmp_path / "assets" / "demo" / "ref.png")})
+    assert groups["neutral"] == [(b"\x01\x02" * 1600, "嗯——")]  # 根目录散落 wav 归 neutral
+    assert groups["positive"] == [(b"\x03\x04" * 800, "哦？")]
+    assert groups["negative"] == []
+    assert load_fillers({"ref_image": None}) == {"positive": [], "negative": [], "neutral": []}
+    item = build_filler_history_item("嗯——")
+    assert item["type"] == "conversation.item.create"
+    assert item["item"]["role"] == "assistant"
+    assert item["item"]["content"][0]["text"] == "嗯——"
+
+
+def test_emotion_mapping_and_sidecar(tmp_path):
+    from voxemw.avatar.orchestrator import EMOTION_TO_GROUP, read_emotion_sidecar
+
+    assert EMOTION_TO_GROUP["HAPPY"] == "positive"
+    assert EMOTION_TO_GROUP["SAD"] == "negative"
+    assert "NEUTRAL" not in EMOTION_TO_GROUP  # 未映射情绪回退 neutral
+    sidecar = tmp_path / "emotion"
+    sidecar.write_text("ANGRY")
+    assert read_emotion_sidecar(str(sidecar)) == "ANGRY"
+    assert read_emotion_sidecar(str(tmp_path / "missing")) == "NEUTRAL"
+
+
+def test_extract_emotion():
+    pytest = __import__("pytest")
+    pytest.importorskip("speech_to_speech")  # handler 依赖管线包，仅 GPU 实例可跑
+    from voxemw.pipeline.stt_sensevoice import extract_emotion
+
+    assert extract_emotion("<|zh|><|HAPPY|><|Speech|><|withitn|>太好了") == "HAPPY"
+    assert extract_emotion("<|zh|><|ANGRY|><|Speech|><|withitn|>你干嘛") == "ANGRY"
+    assert extract_emotion("没有标签的文本") == "NEUTRAL"
+
+
+def test_build_memory_block():
+    from voxemw.memory import build_memory_block
+
+    assert build_memory_block([]) == ""
+    block = build_memory_block(["用户叫小明", "用户在减肥"])
+    assert "关于用户的记忆" in block
+    assert "- 用户叫小明" in block
+    # 超长截断（80 字上限）
+    long_block = build_memory_block(["x" * 100])
+    assert "x" * 81 not in long_block
+
+
+def test_create_memory_store_disabled_by_default():
+    from voxemw.memory import create_memory_store
+
+    assert create_memory_store({}) is None
+    assert create_memory_store({"memory": {"enabled": False}}) is None
+    # 启用但缺 key → 降级 None
+    assert create_memory_store({
+        "memory": {"enabled": True},
+        "llm": {"api_key_env": "DEFINITELY_MISSING_KEY"},
+    }) is None
+
+
+def test_weibo_posts_block(tmp_path):
+    import sqlite3
+
+    from voxemw.weibo import build_posts_block, get_recent_posts
+
+    db = sqlite3.connect(tmp_path / "w.db")
+    db.execute("CREATE TABLE posts(id INTEGER PRIMARY KEY, posted_at TEXT, text TEXT, url TEXT UNIQUE)")
+    db.execute("INSERT INTO posts(posted_at, text, url) VALUES ('2026-08-06 16:17', '第一次尝试医美', 'u1')")
+    db.execute("INSERT INTO posts(posted_at, text, url) VALUES ('2026-08-05 10:00', '下班好累', 'u2')")
+    db.commit()
+
+    posts = get_recent_posts(tmp_path / "w.db", 8)
+    assert len(posts) == 2 and posts[0][1] == "第一次尝试医美"  # 新的在前
+    assert get_recent_posts(tmp_path / "missing.db") == []      # 库不存在降级空
+
+    block = build_posts_block(posts)
+    assert "峰哥近期动态" in block and "第一次尝试医美" in block
+    assert build_posts_block([]) == ""

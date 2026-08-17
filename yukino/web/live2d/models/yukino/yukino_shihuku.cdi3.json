@@ -1,0 +1,425 @@
+{
+	"Version": 3,
+	"Parameters": [
+		{
+			"Id": "PARAM_ANGLE_X",
+			"GroupId": "",
+			"Name": "角度 X"
+		},
+		{
+			"Id": "PARAM_ANGLE_Y",
+			"GroupId": "",
+			"Name": "角度 Y"
+		},
+		{
+			"Id": "PARAM_ANGLE_Z",
+			"GroupId": "",
+			"Name": "角度 Z"
+		},
+		{
+			"Id": "PARAM_EYE_L_OPEN",
+			"GroupId": "",
+			"Name": "左目　開閉"
+		},
+		{
+			"Id": "PARAM_EYE_L_SMILE",
+			"GroupId": "",
+			"Name": "左目　笑顔"
+		},
+		{
+			"Id": "PARAM_EYE_L_JITO",
+			"GroupId": "",
+			"Name": "左目　ジト"
+		},
+		{
+			"Id": "PARAM_EYE_R_OPEN",
+			"GroupId": "",
+			"Name": "右目　開閉"
+		},
+		{
+			"Id": "PARAM_EYE_R_SMILE",
+			"GroupId": "",
+			"Name": "右目　笑顔"
+		},
+		{
+			"Id": "PARAM_EYE_R_JITO",
+			"GroupId": "",
+			"Name": "右目　ジト"
+		},
+		{
+			"Id": "PARAM_EYE_BALL_X",
+			"GroupId": "",
+			"Name": "目玉 X"
+		},
+		{
+			"Id": "PARAM_EYE_BALL_Y",
+			"GroupId": "",
+			"Name": "目玉 Y"
+		},
+		{
+			"Id": "PARAM_EYE_SCALE",
+			"GroupId": "",
+			"Name": "目の拡縮"
+		},
+		{
+			"Id": "PARAM_EYE_URU",
+			"GroupId": "",
+			"Name": "うるうる"
+		},
+		{
+			"Id": "PARAM_BROW_L_X",
+			"GroupId": "",
+			"Name": "左眉　左右"
+		},
+		{
+			"Id": "PARAM_BROW_L_Y",
+			"GroupId": "",
+			"Name": "左眉　上下"
+		},
+		{
+			"Id": "PARAM_BROW_R_X",
+			"GroupId": "",
+			"Name": "右眉　左右"
+		},
+		{
+			"Id": "PARAM_BROW_R_Y",
+			"GroupId": "",
+			"Name": "右眉　上下"
+		},
+		{
+			"Id": "PARAM_BROW_L_ANGLE",
+			"GroupId": "",
+			"Name": "左眉　角度"
+		},
+		{
+			"Id": "PARAM_BROW_R_ANGLE",
+			"GroupId": "",
+			"Name": "右眉　角度"
+		},
+		{
+			"Id": "PARAM_BROW_L_FORM1",
+			"GroupId": "",
+			"Name": "左眉　変形1"
+		},
+		{
+			"Id": "PARAM_BROW_L_FORM2",
+			"GroupId": "",
+			"Name": "左眉　変形2"
+		},
+		{
+			"Id": "PARAM_BROW_L_PIKU",
+			"GroupId": "",
+			"Name": "左眉　ぴく"
+		},
+		{
+			"Id": "PARAM_BROW_R_FORM1",
+			"GroupId": "",
+			"Name": "右眉　変形1"
+		},
+		{
+			"Id": "PARAM_BROW_R_FORM2",
+			"GroupId": "",
+			"Name": "右眉　変形2"
+		},
+		{
+			"Id": "PARAM_BROW_R_PIKU",
+			"GroupId": "",
+			"Name": "右眉　ぴく"
+		},
+		{
+			"Id": "PARAM_MOUTH_FORM",
+			"GroupId": "",
+			"Name": "口　変形"
+		},
+		{
+			"Id": "PARAM_MOUTH_OPEN_Y",
+			"GroupId": "",
+			"Name": "口　開閉"
+		},
+		{
+			"Id": "PARAM_MOUTH_SCALE_X",
+			"GroupId": "",
+			"Name": "口拡縮X"
+		},
+		{
+			"Id": "PARAM_MOUTH_SCALE_Y",
+			"GroupId": "",
+			"Name": "口拡縮Y"
+		},
+		{
+			"Id": "PARAM_CHEEK",
+			"GroupId": "",
+			"Name": "照れ"
+		},
+		{
+			"Id": "PARAM_CHEEK02",
+			"GroupId": "",
+			"Name": "照れ2"
+		},
+		{
+			"Id": "PARAM_YAMI",
+			"GroupId": "",
+			"Name": "病み"
+		},
+		{
+			"Id": "PARAM_ANGER_1",
+			"GroupId": "",
+			"Name": "怒り　1"
+		},
+		{
+			"Id": "PARAM_ANGER_2",
+			"GroupId": "",
+			"Name": "怒り　2"
+		},
+		{
+			"Id": "PARAM___AP",
+			"GroupId": "",
+			"Name": "？ 表示"
+		},
+		{
+			"Id": "PARAM___R",
+			"GroupId": "",
+			"Name": "？　右"
+		},
+		{
+			"Id": "PARAM___L",
+			"GroupId": "",
+			"Name": "？　左"
+		},
+		{
+			"Id": "PARAM_SWEAT",
+			"GroupId": "",
+			"Name": "汗"
+		},
+		{
+			"Id": "PARAM_BODY_ANGLE_X",
+			"GroupId": "",
+			"Name": "体の回転　X"
+		},
+		{
+			"Id": "PARAM_BODY_ANGLE_Y",
+			"GroupId": "",
+			"Name": "体の回転　Y"
+		},
+		{
+			"Id": "PARAM_BODY_ANGLE_Z",
+			"GroupId": "",
+			"Name": "体の回転　Z"
+		},
+		{
+			"Id": "PARAM_BODY_ANGLE_Z2",
+			"GroupId": "",
+			"Name": "体の回転　Z2"
+		},
+		{
+			"Id": "PARAM_RIBBON_R",
+			"GroupId": "",
+			"Name": "リボン右　ゆれ"
+		},
+		{
+			"Id": "PARAM_RIBBON_L",
+			"GroupId": "",
+			"Name": "リボン左　ゆれ"
+		},
+		{
+			"Id": "PARAM_BREATH",
+			"GroupId": "",
+			"Name": "呼吸"
+		},
+		{
+			"Id": "PARAM_SHOULDER_R",
+			"GroupId": "",
+			"Name": "右肩"
+		},
+		{
+			"Id": "PARAM_SHOULDER_L",
+			"GroupId": "",
+			"Name": "左肩"
+		},
+		{
+			"Id": "PARAM_UPPERARM_R",
+			"GroupId": "",
+			"Name": "右上腕"
+		},
+		{
+			"Id": "PARAM_ARM1_AP",
+			"GroupId": "",
+			"Name": "右腕1_切り替え"
+		},
+		{
+			"Id": "PARAM_ARM2_AP",
+			"GroupId": "",
+			"Name": "右腕2_切り替え"
+		},
+		{
+			"Id": "PARAM_HAND1_AP",
+			"GroupId": "",
+			"Name": "右手1　切り替え"
+		},
+		{
+			"Id": "PARAM_HAND2_AP",
+			"GroupId": "",
+			"Name": "右手2　切り替え"
+		},
+		{
+			"Id": "PARAM_FOREARM_R",
+			"GroupId": "",
+			"Name": "右前腕"
+		},
+		{
+			"Id": "PARAM_FOREARM_AP_R",
+			"GroupId": "",
+			"Name": "右前腕_塗り"
+		},
+		{
+			"Id": "PARAM_WRIST_R",
+			"GroupId": "",
+			"Name": "右手首"
+		},
+		{
+			"Id": "PARAM_UPPERARM_L",
+			"GroupId": "",
+			"Name": "左上腕"
+		},
+		{
+			"Id": "PARAM_FOREARM_L",
+			"GroupId": "",
+			"Name": "左前腕"
+		},
+		{
+			"Id": "PARAM_FOREARM_AP_L",
+			"GroupId": "",
+			"Name": "左前腕_塗り"
+		},
+		{
+			"Id": "PARAM_WRIST_L",
+			"GroupId": "",
+			"Name": "左手首"
+		},
+		{
+			"Id": "PARAM_HAIR_FRONT",
+			"GroupId": "",
+			"Name": "髪揺れ　前"
+		},
+		{
+			"Id": "PARAM_HAIR_FRONT_HUWA",
+			"GroupId": "",
+			"Name": "前髪　ふわ"
+		},
+		{
+			"Id": "PARAM_HAIR_SIDE",
+			"GroupId": "",
+			"Name": "髪揺れ　横"
+		},
+		{
+			"Id": "PARAM_HAIR_SIDE_HUWA",
+			"GroupId": "",
+			"Name": "横髪　ふわ"
+		},
+		{
+			"Id": "PARAM_HAIR_BACK",
+			"GroupId": "",
+			"Name": "髪揺れ　後"
+		},
+		{
+			"Id": "PARAM_HAIR_BACK_HUWA",
+			"GroupId": "",
+			"Name": "後ろ髪　ふわ"
+		}
+	],
+	"ParameterGroups": [],
+	"Parts": [
+		{
+			"Id": "PARTS_01_SKETCH",
+			"Name": "[ 下絵 ]"
+		},
+		{
+			"Id": "PARTS_01_BACKGROUND",
+			"Name": "背景"
+		},
+		{
+			"Id": "PARTS_SIHUKU_HAND_L_01",
+			"Name": "私服_左手01"
+		},
+		{
+			"Id": "PARTS_SIHUKU_HAND_R_02",
+			"Name": "私服_右手02"
+		},
+		{
+			"Id": "PARTS_SIHUKU_HAND_R_01",
+			"Name": "私服_右手01"
+		},
+		{
+			"Id": "PARTS_01_BODY",
+			"Name": "体"
+		},
+		{
+			"Id": "PARTS_SIHUKU_ARM_R_02",
+			"Name": "私服_右腕02"
+		},
+		{
+			"Id": "PARTS_SIHUKU_ARM_L_01",
+			"Name": "私服_左腕01"
+		},
+		{
+			"Id": "PARTS_SIHUKU_ARM_R_01",
+			"Name": "私服_右腕01"
+		},
+		{
+			"Id": "PARTS_SIHUKU",
+			"Name": "私服"
+		},
+		{
+			"Id": "PARTS_01_NECK",
+			"Name": "首"
+		},
+		{
+			"Id": "PARTS_01_HAIR_SIDE_001",
+			"Name": "横髪"
+		},
+		{
+			"Id": "PARTS_01_HAIR_BACK_001",
+			"Name": "後ろ髪"
+		},
+		{
+			"Id": "PARTS_01_HAIR_FRONT_001",
+			"Name": "前髪"
+		},
+		{
+			"Id": "PARTS_01_EAR_001",
+			"Name": "耳"
+		},
+		{
+			"Id": "PARTS_01_NOSE_001",
+			"Name": "鼻"
+		},
+		{
+			"Id": "PARTS_01_MOUTH_001",
+			"Name": "口"
+		},
+		{
+			"Id": "PARTS_01_BROW_001",
+			"Name": "まゆ毛"
+		},
+		{
+			"Id": "PARTS_01_EYE_BALL_001",
+			"Name": "目玉"
+		},
+		{
+			"Id": "PARTS_01_EYE_001",
+			"Name": "目"
+		},
+		{
+			"Id": "PARTS_01_FACE_001",
+			"Name": "顔"
+		},
+		{
+			"Id": "ROUGH",
+			"Name": "ラフ"
+		},
+		{
+			"Id": "PSD",
+			"Name": "PSD"
+		}
+	]
+}

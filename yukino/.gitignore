@@ -1,0 +1,77 @@
+# 凭证与本地环境
+.env.local
+.env
+.venv/
+.venv-avatar/
+
+# 运行日志与临时文件
+*.log
+nohup.out
+logs/
+log/
+__pycache__/
+*.pyc
+
+# 第三方推理代码与模型权重（部署脚本拉取）
+vendor/
+models/
+
+# 用户提供的素材已随仓库开源入库：ref 参考音频/台词/立绘、全部图片
+# 一律保留。仅目录级排除特定产物（murmur/fillers/TTS 衍生物，见下）。
+# 数字人模型核心资产（例外于上面 *.png 全局忽略；注意须文件级模式，
+# 目录级 !dir/ 无法恢复目录内文件——git 不深入已忽略目录）
+!yukino2d/parts/*.png
+!yukino Vtuber live 2d/vtuber_model/parts/*.png
+# Live2D Cubism 4 模型资产（春物角色 live2d-win 雪乃，个人预览用）
+# 注意：上面的 models/ 规则会吞掉 web/live2d/models 目录，必须先取消忽略目录本身
+!web/live2d/models/
+!web/live2d/models/yukino/
+!web/live2d/models/**/*.png
+!web/live2d/models/**/*.moc3
+!web/live2d/models/**/*.model3.json
+!web/live2d/models/**/*.json
+!web/live2d/runtime/*.js
+# Claude 工具记忆（.workbuddy）与嵌套仓库 .git 暂存（并入主仓库前的可逆备份）
+.workbuddy/
+.git-yukino2d-backup/
+# 音色素材临时目录（春物 ogg 片段/拼接/备份，个人素材不入库）
+tmp_ref_clips/
+# 运行时数据（微博抓取缓存等，不入库）
+data/weibo.db
+# 渲染/验证输出（render_tha3_demo.py 等产物）
+out/
+# 音色衍生物（TTS 克隆生成的嘟囔/垫音，同上不入库）
+assets/*/murmur_*.wav
+assets/*/fillers/**/*.wav
+
+# 局域网反代的自签证书与私钥（可重新生成，不入库）
+scripts/lan_https/*.crt
+scripts/lan_https/*.key
+scripts/lan_https/*.csr
+scripts/lan_https/*.srl
+
+# macOS / 测试缓存
+.DS_Store
+.pytest_cache/
+
+# 语料素材（大文件/个人材料，不入库）
+novel/
+*.ogg
+*.pdf
+第一卷 第一章 反正比企谷八幡就是一副死鱼眼.txt
+
+# npx skills 安装产物（女娲等第三方 skill）
+.agents/
+.claude/
+skills-lock.json
+weight.json
+
+# GPT-SoVITS 权重资产（推理用 WSL 本地副本，不入库；仅匹配仓库根级，
+# 避免大小写不敏感环境下吞掉 assets/yukino 等同名目录）
+./Yukino/
+GPTV2proplus/
+# Live2D 模型目录也叫 yukino，必须排除；否则会被上面的 Yukino/ 吞掉
+!web/live2d/models/yukino/
+
+# 本地调试残留
+tmp/

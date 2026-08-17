@@ -1,0 +1,92 @@
+{
+	"Type": "Live2D Expression",
+	"FadeInTime": 0.5,
+	"FadeOutTime": 0.5,
+	"Parameters": [
+		{
+			"Id": "PARAM_EYE_L_OPEN",
+			"Value": 0.25,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_EYE_L_JITO",
+			"Value": 1,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_EYE_R_OPEN",
+			"Value": 0.23,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_EYE_R_JITO",
+			"Value": 1,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_EYE_BALL_Y",
+			"Value": -0.08,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_L_X",
+			"Value": -0.38,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_L_Y",
+			"Value": -0.17,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_R_X",
+			"Value": 0.5,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_R_Y",
+			"Value": -0.2,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_L_ANGLE",
+			"Value": 0.51,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_R_ANGLE",
+			"Value": 0.62,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_L_FORM1",
+			"Value": -1.81,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_L_FORM2",
+			"Value": -1.58,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_R_FORM1",
+			"Value": -1.62,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_BROW_R_FORM2",
+			"Value": -1.42,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_MOUTH_FORM",
+			"Value": -1,
+			"Blend": "Add"
+		},
+		{
+			"Id": "PARAM_MOUTH_FORM2",
+			"Value": -2,
+			"Blend": "Add"
+		}
+	]
+}

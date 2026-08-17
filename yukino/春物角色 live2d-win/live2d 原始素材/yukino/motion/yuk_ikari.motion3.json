@@ -1,0 +1,65 @@
+{
+	"Version": 3,
+	"Meta": {
+		"Duration": 0.733,
+		"Fps": 30.0,
+		"FadeInTime": 1.0,
+		"FadeOutTime": 1.0,
+		"Loop": true,
+		"AreBeziersRestricted": true,
+		"CurveCount": 2,
+		"TotalSegmentCount": 5,
+		"TotalPointCount": 15,
+		"UserDataCount": 0,
+		"TotalUserDataSize": 0
+	},
+	"Curves": [
+		{
+			"Target": "Parameter",
+			"Id": "PARAM_ANGER_1",
+			"Segments": [
+				0,
+				1,
+				0,
+				0.733,
+				1
+			]
+		},
+		{
+			"Target": "Parameter",
+			"Id": "PARAM_ANGER_2",
+			"Segments": [
+				0,
+				0,
+				1,
+				0.056,
+				0,
+				0.111,
+				0.635,
+				0.167,
+				0.826,
+				1,
+				0.222,
+				1.017,
+				0.278,
+				1,
+				0.333,
+				1,
+				1,
+				0.411,
+				1,
+				0.489,
+				0.605,
+				0.567,
+				0.26,
+				1,
+				0.622,
+				0.014,
+				0.678,
+				0,
+				0.733,
+				0
+			]
+		}
+	]
+}

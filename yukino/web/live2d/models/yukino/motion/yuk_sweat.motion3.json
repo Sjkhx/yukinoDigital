@@ -1,0 +1,36 @@
+{
+  "Version": 3,
+  "Meta": {
+    "Duration": 0.667,
+    "Fps": 30.0,
+    "FadeInTime": 1.0,
+    "FadeOutTime": 1.0,
+    "Loop": false,
+    "AreBeziersRestricted": true,
+    "CurveCount": 1,
+    "TotalSegmentCount": 2,
+    "TotalPointCount": 5,
+    "UserDataCount": 0,
+    "TotalUserDataSize": 0
+  },
+  "Curves": [
+    {
+      "Target": "Parameter",
+      "Id": "PARAM_SWEAT",
+      "Segments": [
+        0,
+        0,
+        1,
+        0.167,
+        0,
+        0.333,
+        1,
+        0.5,
+        1,
+        0,
+        0.667,
+        1
+      ]
+    }
+  ]
+}

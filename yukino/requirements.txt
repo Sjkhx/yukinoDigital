@@ -1,0 +1,34 @@
+# VoxEMW 数字人实时语音助手 —— GPU 服务器依赖（AutoDL 4090D）
+#
+# torch/torchaudio 需先单独安装 cu128 wheel，flash_attn 与 ffmpeg 另装，
+# 见 scripts/autodl_setup.sh（本文件只管 pip 常规依赖）。
+
+# 语音管线主体（pip 依赖，运行时注册自定义积木；当前为上游 main @5b443c8
+# ——PyPI 最新仍是 0.2.11，main 含 #391 投机话轮修复。2026-08-03 按
+# docs/upgrade-regression.md 五阶段验收后扶正；回滚锚点：pip 版 0.2.11）
+speech-to-speech @ git+https://github.com/huggingface/speech-to-speech.git@5b443c8011349f7b5a7138c2ad29fe1c1e65b8bd
+
+# 自定义积木依赖
+voxcpm                  # TTS：openbmb/VoxCPM2
+transformers            # STT：SenseVoice（FunASR 另装）/ Qwen3-ASR 备选
+funasr                  # STT：iic/SenseVoiceSmall（ModelScope）
+mem0ai                  # 记忆积木（第七块）：LLM 抽取走 DeepSeek
+sentence-transformers   # 记忆 embedding：本地 bge-m3（DeepSeek 无 embedding API）
+qdrant-client           # 记忆向量库（内嵌文件模式）
+# 注意：torchcodec 与 transformers 5.x 共存会炸（libnvrtc.so.13），装上了请卸载
+
+# 编排与服务
+aiohttp                 # orchestrator（Web 静态页 + ws）
+websockets              # orchestrator → s2s / avatar service 的 ws 客户端
+
+# Avatar 数字人（backend=tha3）：Talking Head Anime 3 动漫参数化说话头。
+# 官方模型加载器（34j 维护的 pip 包装，含 separable_float 模型与 PyTorch 推理
+# API）；权重亦可 scripts/fetch_tha3_models.py 下官方 standard_float 到
+# data/models/<variant>/。torch 需 cu128+ 构建（RTX 5080 sm_120），
+# 单独装：pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+tha3
+
+# 基础
+numpy
+scipy                   # TTS 重采样（resample_poly）
+pyyaml

@@ -1,0 +1,251 @@
+{
+  "Version": 3,
+  "FileReferences": {
+    "Moc": "yukino_shihuku.moc3",
+    "Textures": [
+      "yukino_shihuku.1024/texture_00.png",
+      "yukino_shihuku.1024/texture_01.png"
+    ],
+    "DisplayInfo": "yukino_shihuku.cdi3.json",
+    "Expressions": [
+      {
+        "Name": "yuk_em0.exp3.json",
+        "File": "expressions/yuk_em0.exp3.json"
+      },
+      {
+        "Name": "yuk_em1.exp3.json",
+        "File": "expressions/yuk_em1.exp3.json"
+      },
+      {
+        "Name": "yuk_em2.exp3.json",
+        "File": "expressions/yuk_em2.exp3.json"
+      },
+      {
+        "Name": "yuk_em3.exp3.json",
+        "File": "expressions/yuk_em3.exp3.json"
+      },
+      {
+        "Name": "yuk_em4.exp3.json",
+        "File": "expressions/yuk_em4.exp3.json"
+      },
+      {
+        "Name": "yuk_em5.exp3.json",
+        "File": "expressions/yuk_em5.exp3.json"
+      },
+      {
+        "Name": "yuk_em6.exp3.json",
+        "File": "expressions/yuk_em6.exp3.json"
+      },
+      {
+        "Name": "yuk_em7.exp3.json",
+        "File": "expressions/yuk_em7.exp3.json"
+      },
+      {
+        "Name": "yuk_em8.exp3.json",
+        "File": "expressions/yuk_em8.exp3.json"
+      },
+      {
+        "Name": "yuk_em9.exp3.json",
+        "File": "expressions/yuk_em9.exp3.json"
+      },
+      {
+        "Name": "yuk_em10.exp3.json",
+        "File": "expressions/yuk_em10.exp3.json"
+      },
+      {
+        "Name": "yuk_em11.exp3.json",
+        "File": "expressions/yuk_em11.exp3.json"
+      },
+      {
+        "Name": "yuk_em12.exp3.json",
+        "File": "expressions/yuk_em12.exp3.json"
+      },
+      {
+        "Name": "yuk_em13.exp3.json",
+        "File": "expressions/yuk_em13.exp3.json"
+      }
+    ],
+    "Motions": {
+      "Idle": [
+        {
+          "File": "motion/yuk_pose1_idle.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        }
+      ],
+      "Pose1": [
+        {
+          "File": "motion/yuk_pose1_idle.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        }
+      ],
+      "Pose2": [
+        {
+          "File": "motion/yuk_pose2_idle.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        }
+      ],
+      "Pose3": [
+        {
+          "File": "motion/yuk_pose3_idle.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        }
+      ],
+      "Action": [
+        {
+          "File": "motion/yuk_pose1_idle.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mot1a.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mot2a.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mot3a.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mot4a.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_pose2_idle.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mot1b.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mot2b.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mot3b.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mot4b.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_pose3_idle.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mot1c.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mot2c.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mot3c.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mot4c.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_sweat.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_uruuru.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_yami.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_hatena.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_ikari.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mayu.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mot1-2.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mot1-3.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mot2-1.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mot2-3.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mot3-1.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        },
+        {
+          "File": "motion/yuk_mot3-2.motion3.json",
+          "FadeInTime": 2.0,
+          "FadeOutTime": 2.0
+        }
+      ]
+    }
+  },
+  "Groups": [
+    {
+      "Target": "Parameter",
+      "Name": "EyeBlink",
+      "Ids": [
+        "PARAM_EYE_L_OPEN",
+        "PARAM_EYE_R_OPEN"
+      ]
+    },
+    {
+      "Target": "Parameter",
+      "Name": "LipSync",
+      "Ids": []
+    }
+  ]
+}

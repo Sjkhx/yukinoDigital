@@ -875,6 +875,17 @@ def create_app(config: dict):
         conversations = await asyncio.to_thread(history_store.list_conversations, 100)
         return web.json_response({"enabled": True, "conversations": conversations})
 
+    async def api_history_latest(_request):
+        """最近一条会话及其消息，供前端进页时自动恢复（非历史抽屉）。"""
+        if history_store is None:
+            return web.json_response({"enabled": False})
+        conversations = await asyncio.to_thread(history_store.list_conversations, 1)
+        if not conversations:
+            return web.json_response({"enabled": True, "conversation": None, "messages": []})
+        conv = conversations[0]
+        messages = await asyncio.to_thread(history_store.get_messages, conv["session_id"])
+        return web.json_response({"enabled": True, "conversation": conv, "messages": messages})
+
     async def api_history_detail(request):
         if history_store is None:
             return web.json_response({"enabled": False})
@@ -947,16 +958,27 @@ def create_app(config: dict):
             except Exception as e:
                 logger.info("task-done 音频推送失败（忽略）: %s", e)
 
-        if history_store is not None and session is not None:
+        if history_store is not None:
+            # DSH task-done 写入一个稳定的 DSH 会话 id（不随 ws 重连变化），
+            # 这样重开 /#/yukino 时前端能按 updated_at 取回最近这条 DSH 对话恢复，
+            # 而不是每次 ws 重连都被顶成空新会话。有活跃语音会话则沿用其 session_id。
+            target_sid = None
+            if session is not None:
+                target_sid = session.session_id
+            if not target_sid:
+                target_sid = current_session.get("dsh_sid")
+                if not target_sid:
+                    target_sid = "dsh-tasks-" + datetime.datetime.now().strftime("%Y%m%d")
+                    current_session["dsh_sid"] = target_sid
             try:
                 history_store.add_message(
-                    session.session_id, "user", raw_text,
-                    persona=session.persona_id,
+                    target_sid, "user", raw_text,
+                    persona=(session.persona_id if session is not None else default_persona),
                 )
                 history_store.add_message(
-                    session.session_id, "assistant", ja_text,
+                    target_sid, "assistant", ja_text,
                     translation=zh_text,
-                    persona=session.persona_id,
+                    persona=(session.persona_id if session is not None else default_persona),
                 )
             except Exception as e:
                 logger.info("写入 task-done 历史失败（忽略）: %s", e)
@@ -997,6 +1019,7 @@ def create_app(config: dict):
     app.router.add_post("/api/memory/core", api_memory_core)
     app.router.add_get("/history", history_page)
     app.router.add_get("/api/history", api_history)
+    app.router.add_get("/api/history/latest", api_history_latest)
     app.router.add_get("/api/history/{sid}", api_history_detail)
     app.router.add_delete("/api/history/{sid}", api_history_delete)
     app.router.add_post("/api/yukino/task-done", api_yukino_task_done)

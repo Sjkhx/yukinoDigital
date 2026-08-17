@@ -48,16 +48,23 @@ profile 的 `cordis.patch.yml` 里启用：
 
 ## 二、装配雪乃服务（VoxEMW）
 
-### 1. Python 环境
+### 1. Python 环境（uv 管理）
 
 ```bash
 cd yukino
-python -m venv .venv
-# Windows 用 .venv\Scripts\activate；WSL 用 source .venv/bin/activate
-pip install -r requirements.txt
+uv venv .venv --python 3.12
 ```
 
-GPU 数字人/语音需要 torch（按显卡 cu 版本单独装，见 `yukino/scripts/autodl_setup.sh` 与 `MODEL_DOWNLOAD.md`）。
+- **最小集**（Windows 上跑 orchestrator，含记忆积木所需的 qdrant + OpenAI 兼容 API）：
+  ```bash
+  uv pip install --python .venv aiohttp websockets pyyaml numpy qdrant-client scipy openai
+  ```
+- **全量**（语音管线 VoxCPM/FunASR/THA3 等，GPU 机器/WSL 用；连带安装 torch，建议参考 `scripts/autodl_setup.sh` 按卡型单独装 torch 后再执行）：
+  ```bash
+  uv pip install --python .venv -r requirements.txt
+  ```
+
+> 记忆积木（`voxemw/memory.py`）是 qdrant LocalMode 向量库 + OpenAI 兼容 embedding API 实现，不依赖 mem0ai / sentence-transformers（旧积木）。
 
 ### 2. 语音模型下载
 
@@ -81,7 +88,7 @@ cp yukino/.env.example yukino/.env.local
 1. 启动雪乃 orchestrator（独立进程，Windows 或 WSL 均可）：
    ```bash
    cd yukino
-   python -m voxemw.avatar.orchestrator --config configs/assistant.yaml
+   uv run --python .venv python -m voxemw.avatar.orchestrator --config configs/assistant.yaml
    ```
    确认 `http://127.0.0.1:8000/` 可访问。
 2. 打开 DSH web，访问路由 `#/yukino`，页面 iframe 即嵌入雪乃。

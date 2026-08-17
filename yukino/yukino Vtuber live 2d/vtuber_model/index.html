@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yukino · VTuber 伪Live2D模型</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:transparent; }
+  #stage { display:block; width:100vw; height:100vh; }
+  #ui {
+    position:fixed; top:12px; right:12px; z-index:10;
+    background:rgba(20,20,28,.82); color:#eee; border-radius:12px;
+    padding:14px 16px; font:13px/1.7 "Microsoft YaHei",sans-serif;
+    width:250px; backdrop-filter:blur(6px); user-select:none;
+    transition:opacity .25s;
+  }
+  #ui.hidden { opacity:0; pointer-events:none; }
+  #ui h1 { font-size:14px; margin-bottom:8px; color:#ffb7d5; }
+  #ui button {
+    display:block; width:100%; margin:4px 0; padding:6px 10px;
+    border:1px solid #555; border-radius:8px; background:#2a2a38; color:#eee;
+    cursor:pointer; font-size:12px; text-align:left;
+  }
+  #ui button:hover { background:#3a3a4c; }
+  #ui button.on { border-color:#ff7fb0; color:#ff9ec4; }
+  #ui label { display:block; margin-top:6px; font-size:12px; color:#aaa; }
+  #ui input[type=range] { width:100%; }
+  #ui .bgrow { display:flex; gap:4px; }
+  #ui .bgrow button { flex:1; text-align:center; padding:4px 0; }
+  #ui .help { margin-top:8px; font-size:11px; color:#888; }
+  #toast {
+    position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
+    background:rgba(20,20,28,.85); color:#ffd7e6; padding:8px 18px;
+    border-radius:20px; font:13px "Microsoft YaHei",sans-serif;
+    opacity:0; transition:opacity .3s; pointer-events:none; z-index:11;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<div id="ui">
+  <h1>🐱 Yukino 伪Live2D 控制台</h1>
+  <button id="btnMic">🎤 开启麦克风口型同步</button>
+  <button id="btnSim">🗣️ 模拟说话（测试用）</button>
+  <button id="btnTrack">🖱️ 鼠标追踪：开</button>
+  <label>口型灵敏度 <span id="sensVal">4.0</span>
+    <input type="range" id="sens" min="2" max="12" step="0.5" value="4">
+  </label>
+  <label>背景</label>
+  <div class="bgrow">
+    <button data-bg="none" class="on">透明</button>
+    <button data-bg="green">绿幕</button>
+    <button data-bg="pink">粉色</button>
+  </div>
+  <div class="help">
+    快捷键：H 隐藏/显示面板 · D 调试框 · 空格按住=说话<br>
+    OBS：添加「浏览器」源，填入本页地址，勾选"透明背景"，按 H 隐藏面板即可。
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* ================= 可调配准参数（归一化坐标，相对图片宽高） ================= */
+const CFG = {
+  parts: { base:"parts/base.png", blink:"parts/blink.png", mouth:"parts/mouth.png" },
+  leanPivot : { x:0.500, y:0.985 },                        // 整体摆动支点（脚底）
+  eyeRect   : { x:0.402, y:0.270, w:0.210, h:0.080, srcDy:18 }, // 双眼区域（闭眼差分，srcDy=源偏移px）
+  mouthRect : { x:0.462, y:0.368, w:0.072, h:0.040, srcDy:0 },  // 嘴部区域（张嘴差分，紧贴嘴部不含下巴）
+  swayStartY: 0.55,                           // 此高度以下做飘动（发梢/裙摆/尾巴）
+  follow: { x:10, y:6, rot:0.028 },           // 整体跟随幅度（px / rad）
+  mouth:  { maxOpen:0.72,                     // 口型开合上限（防止张太大）
+            baseSX:0.80, growX:0.20,          // 贴片横向缩放：base + grow*open
+            baseSY:0.28, growY:0.72 },        // 贴片纵向缩放（开口度，最大≈0.80）
+};
+/* ========================================================================== */
+
+const canvas = document.getElementById("stage");
+const ctx = canvas.getContext("2d");
+let W = 0, H = 0, DPR = 1;
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
+}
+window.addEventListener("resize", resize); resize();
+
+const state = {
+  leanX:0, leanY:0, leanRot:0,     // 整体跟随（脚底支点）
+  blink:0, mouth:0, talkEnergy:0,
+  tracking:true, micOn:false, simTalk:false,
+  sensitivity:4, bg:"none", debug:false,
+  analyser:null, spaceHeld:false,
+};
+const mouse = { x:0, y:0, last:0 };
+
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.style.opacity = 1;
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.opacity = 0, 2200);
+}
+
+/* ---------- 图片加载与预处理 ---------- */
+function loadImage(src) {
+  return new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = () => rej(new Error("加载失败: " + src));
+    im.src = src;
+  });
+}
+
+/* 立绘已离线去背（透明 PNG），直接绘制即可 */
+function processImage(im) {
+  const c = document.createElement("canvas");
+  c.width = im.naturalWidth; c.height = im.naturalHeight;
+  c.getContext("2d").drawImage(im, 0, 0);
+  return c;
+}
+
+/* 差分小贴片：实心核心 + 四边 smoothstep 羽化，用于闭眼/张嘴叠加 */
+function edgeMask(w, h, fx, fy) {
+  const m = document.createElement("canvas"); m.width = w; m.height = h;
+  const g = m.getContext("2d");
+  const img = g.createImageData(w, h), d = img.data;
+  const rx = fx * w, ry = fy * h;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const ax = Math.max(0, Math.min(1, Math.min(x, w - 1 - x) / rx));
+    const ay = Math.max(0, Math.min(1, Math.min(y, h - 1 - y) / ry));
+    let a = Math.min(ax, ay); a = a * a * (3 - 2 * a);
+    const o = (y * w + x) * 4;
+    d[o] = d[o+1] = d[o+2] = 255; d[o+3] = Math.round(a * 255);
+  }
+  g.putImageData(img, 0, 0);
+  return m;
+}
+
+function makeSprite(src, rect) {
+  const x = rect.x * src.width, y = rect.y * src.height;
+  const w = Math.round(rect.w * src.width), h = Math.round(rect.h * src.height);
+  const dy = rect.srcDy || 0;
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const g = c.getContext("2d");
+  g.drawImage(src, x, y + dy, w, h, 0, 0, w, h);
+  g.globalCompositeOperation = "destination-in";
+  g.drawImage(edgeMask(w, h, 0.07, 0.09), 0, 0);
+  return { c, x, y };
+}
+
+/* ---------- 初始化 ---------- */
+let fullC, blinkSpr, mouthSpr, imgW, imgH, ready = false;
+
+(async function init() {
+  try {
+    const [imB, imE, imM] = await Promise.all([
+      loadImage(CFG.parts.base), loadImage(CFG.parts.blink), loadImage(CFG.parts.mouth)]);
+    fullC = processImage(imB);
+    const blink = processImage(imE), mouth = processImage(imM);
+    imgW = fullC.width; imgH = fullC.height;
+    blinkSpr = makeSprite(blink, CFG.eyeRect);
+    mouthSpr = makeSprite(mouth, CFG.mouthRect);
+    ready = true;
+    toast("模型加载完成，按 H 隐藏控制面板");
+  } catch (e) {
+    toast("⚠ " + e.message + "（请通过本地服务器访问，勿直接双击打开）");
+  }
+  requestAnimationFrame(loop);
+})();
+
+/* ---------- 交互 ---------- */
+window.addEventListener("mousemove", e => {
+  mouse.x = e.clientX / W * 2 - 1;
+  mouse.y = e.clientY / H * 2 - 1;
+  mouse.last = performance.now();
+});
+window.addEventListener("keydown", e => {
+  if (e.code === "KeyH") document.getElementById("ui").classList.toggle("hidden");
+  if (e.code === "KeyD") state.debug = !state.debug;
+  if (e.code === "Space") { state.spaceHeld = true; e.preventDefault(); }
+});
+window.addEventListener("keyup", e => { if (e.code === "Space") state.spaceHeld = false; });
+
+const btnMic = document.getElementById("btnMic");
+btnMic.onclick = async () => {
+  if (state.micOn) {
+    state.micOn = false; state.analyser = null;
+    if (state._stream) state._stream.getTracks().forEach(t => t.stop());
+    btnMic.textContent = "🎤 开启麦克风口型同步"; btnMic.classList.remove("on");
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const an = ac.createAnalyser(); an.fftSize = 512;
+    ac.createMediaStreamSource(stream).connect(an);
+    state.analyser = an; state.micOn = true; state._stream = stream;
+    btnMic.textContent = "🎤 麦克风：开（点击关闭）"; btnMic.classList.add("on");
+    toast("麦克风已开启，说话试试");
+  } catch (e) { toast("⚠ 麦克风授权失败：" + e.message); }
+};
+const btnSim = document.getElementById("btnSim");
+btnSim.onclick = () => {
+  state.simTalk = !state.simTalk;
+  btnSim.classList.toggle("on", state.simTalk);
+};
+const btnTrack = document.getElementById("btnTrack");
+btnTrack.onclick = () => {
+  state.tracking = !state.tracking;
+  btnTrack.textContent = "🖱️ 鼠标追踪：" + (state.tracking ? "开" : "关");
+  btnTrack.classList.toggle("on", state.tracking);
+};
+document.getElementById("sens").oninput = e => {
+  state.sensitivity = +e.target.value;
+  document.getElementById("sensVal").textContent = state.sensitivity.toFixed(1);
+};
+document.querySelectorAll(".bgrow button").forEach(b => {
+  b.onclick = () => {
+    state.bg = b.dataset.bg;
+    document.querySelectorAll(".bgrow button").forEach(x => x.classList.toggle("on", x === b));
+  };
+});
+
+/* ---------- 动画状态 ---------- */
+let prevT = 0, blinkTimer = 0, nextBlink = 2500, blinkPhase = 0;
+const micBuf = new Uint8Array(512);
+
+function update(t, dt) {
+  /* 整体跟随（绕脚底支点的轻微摇摆/平移，空闲 4 秒后自动漂移） */
+  let nx = mouse.x, ny = mouse.y;
+  if (!state.tracking || t - mouse.last > 4000) {
+    nx = Math.sin(t * 0.0006) * 0.35 + Math.sin(t * 0.0013) * 0.15;
+    ny = Math.cos(t * 0.0008) * 0.22;
+  }
+  const k = 1 - Math.pow(0.0001, dt / 1000);
+  state.leanX   += (nx * CFG.follow.x  - state.leanX)   * k;
+  state.leanY   += (ny * CFG.follow.y  - state.leanY)   * k;
+  state.leanRot += (nx * CFG.follow.rot - state.leanRot) * k;
+
+  /* 眨眼状态机 */
+  blinkTimer += dt;
+  if (blinkPhase === 0 && blinkTimer > nextBlink) { blinkPhase = 1; blinkTimer = 0; }
+  else if (blinkPhase === 1) {
+    state.blink = Math.min(1, blinkTimer / 70);
+    if (state.blink >= 1) { blinkPhase = 2; blinkTimer = 0; }
+  } else if (blinkPhase === 2) {
+    if (blinkTimer > 50) { blinkPhase = 3; blinkTimer = 0; }
+  } else if (blinkPhase === 3) {
+    state.blink = Math.max(0, 1 - blinkTimer / 130);
+    if (state.blink <= 0) {
+      blinkPhase = 0; blinkTimer = 0;
+      nextBlink = Math.random() < 0.15 ? 260 : 1800 + Math.random() * 3800;
+    }
+  }
+
+  /* 口型 + 说话能量（驱动身体自然摆动） */
+  let target = 0;
+  if (state.micOn && state.analyser) {
+    state.analyser.getByteTimeDomainData(micBuf);
+    let sum = 0;
+    for (let i = 0; i < micBuf.length; i++) { const v = (micBuf[i] - 128) / 128; sum += v * v; }
+    const rms = Math.sqrt(sum / micBuf.length);
+    target = Math.max(0, Math.min(1, (rms - 0.02) * state.sensitivity));
+  }
+  if (state.simTalk) {
+    target = Math.max(target, 0.3 + 0.4 * Math.abs(Math.sin(t * 0.011)) + 0.25 * Math.abs(Math.sin(t * 0.027)));
+  }
+  if (state.spaceHeld) target = 1;
+  const rate = target > state.mouth ? 0.55 : 0.22;
+  state.mouth += (target - state.mouth) * rate;
+  state.mouth = Math.min(state.mouth, CFG.mouth.maxOpen);
+  const eRate = target > state.talkEnergy ? 0.05 : 0.02;
+  state.talkEnergy += (Math.min(target, 0.6) - state.talkEnergy) * eRate;
+}
+
+/* ---------- 渲染 ---------- */
+function loop(t) {
+  const dt = Math.min(50, t - prevT || 16); prevT = t;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (state.bg === "green") { ctx.fillStyle = "#00ff00"; ctx.fillRect(0, 0, W, H); }
+  else if (state.bg === "pink") { ctx.fillStyle = "#f7d7ea"; ctx.fillRect(0, 0, W, H); }
+  else ctx.clearRect(0, 0, W, H);
+
+  if (ready) {
+    update(t, dt);
+    const scale = Math.min(H * 0.96 / imgH, W * 0.92 / imgW);
+    const ox = (W - imgW * scale) / 2, oy = (H - imgH * scale) / 2;
+    const breath = Math.sin(t * 0.0016);
+    const swayT = t * 0.001;
+    const energy = state.talkEnergy;               // 说话能量 0~0.6
+    const swayGain = 1 + energy * 1.6;             // 说话时摆动增强
+    const rock = energy * 0.010 * Math.sin(t * 0.004);  // 说话时的身体摇摆（低频≈0.6Hz）
+
+    ctx.save();
+    ctx.translate(ox, oy); ctx.scale(scale, scale);
+
+    /* 整体跟随变换：绕脚底支点的轻微旋转 + 平移 */
+    const px = CFG.leanPivot.x * imgW, py = CFG.leanPivot.y * imgH;
+    ctx.translate(px + state.leanX, py + state.leanY + breath * 1.2);
+    ctx.rotate(state.leanRot + rock);
+    ctx.translate(-px, -py);
+
+    /* 主体：上半整块绘制，下半逐条横向飘动 */
+    const swayY = CFG.swayStartY * imgH;
+    ctx.drawImage(fullC, 0, 0, imgW, swayY, 0, 0, imgW, swayY);
+    const strip = 8;
+    for (let y = swayY; y < imgH; y += strip) {
+      const p = (y - swayY) / (imgH - swayY);
+      const dx = (Math.sin(swayT * 1.7 + y * 0.012) * 3.5 +
+                  Math.sin(swayT * 0.9 + y * 0.030) * 2.0) * p * p * swayGain;
+      const sh = Math.min(strip, imgH - y);
+      ctx.drawImage(fullC, 0, y, imgW, sh, dx, y, imgW, sh);
+    }
+
+    /* 闭眼差分叠加（眨眼） */
+    if (state.blink > 0.01) {
+      ctx.globalAlpha = state.blink;
+      ctx.drawImage(blinkSpr.c, blinkSpr.x, blinkSpr.y);
+      ctx.globalAlpha = 1;
+    }
+    /* 张嘴差分叠加（口型同步）：快速升至不透明以完全盖住底层原嘴，仅靠缩放表现开合 */
+    const mo = state.mouth;
+    if (mo > 0.01) {
+      const cx = mouthSpr.x + mouthSpr.c.width / 2;
+      const cy = mouthSpr.y + mouthSpr.c.height / 2;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(CFG.mouth.baseSX + CFG.mouth.growX * mo,
+                CFG.mouth.baseSY + CFG.mouth.growY * mo);
+      ctx.globalAlpha = Math.min(1, mo * 5);
+      ctx.drawImage(mouthSpr.c, -mouthSpr.c.width / 2, -mouthSpr.c.height / 2);
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+
+    /* 调试框 */
+    if (state.debug) {
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#ff4d6d";
+      ctx.strokeRect(CFG.eyeRect.x * imgW, CFG.eyeRect.y * imgH,
+                     CFG.eyeRect.w * imgW, CFG.eyeRect.h * imgH);
+      ctx.strokeStyle = "#4dc3ff";
+      ctx.strokeRect(CFG.mouthRect.x * imgW, CFG.mouthRect.y * imgH,
+                     CFG.mouthRect.w * imgW, CFG.mouthRect.h * imgH);
+      ctx.strokeStyle = "#7dff4d";
+      ctx.beginPath();
+      ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+  } else {
+    ctx.fillStyle = "#888";
+    ctx.font = "16px Microsoft YaHei";
+    ctx.textAlign = "center";
+    ctx.fillText("模型加载中…", W / 2, H / 2);
+  }
+  requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,225 @@
+# VoxEMW 数字人实时语音助手 —— AutoDL RTX 4090D（24GB 单卡）
+#
+# 七块积木：vad（语音活动检测）/ stt（语音转文字）/ llm（对话模型）/
+#           tts（文字转语音）/ avatar（数字人形象，AVTR-1）/ personas（人设注册表）/
+#           memory（长期记忆，Mem0）
+#
+# 架构：huggingface/speech-to-speech 管线（pip 依赖，运行时注册自定义积木）
+#        浏览器 ↔ orchestrator（voxemw.avatar.orchestrator，:8000）
+#                ↔ s2s realtime ws（:8765，内部）
+#                ↔ avatar service（voxemw.avatar.service，:8767，内部）
+#
+# 用法：
+#   python -m voxemw.pipeline.launch                 # s2s 语音管线（GPU 进程）
+#   python -m voxemw.avatar.service                  # 数字人服务（GPU 进程）
+#   python -m voxemw.avatar.orchestrator             # 编排 + Web 入口（CPU 进程）
+
+# ---------------------------------------------------------------------------
+# VAD：语音活动检测。上游只有 silero 一种实现，只能调参不能换。
+# ---------------------------------------------------------------------------
+vad:
+  backend: silero
+  # 判停静音时长：上游默认 64ms 太灵，稍微停顿就被切断；900ms 实测等待感偏强。
+  # 600→500ms：pipeline 的 speculative reopen 会接住误断，压低 100ms 响应延迟
+  min_silence_ms: 500
+  # thresh: 0.6             # 检测阈值，越大越严格
+  # min_speech_ms: 384      # 最短有效语音
+  # speech_pad_ms: 500      # 段前保留音频
+
+# ---------------------------------------------------------------------------
+# STT：语音转文字。sensevoice = 自定义积木（voxemw.pipeline.stt_sensevoice），
+# FunASR SenseVoiceSmall 本地推理：非自回归一次前向出全文，实测 4s 音频 0.06s
+# （Qwen3-ASR-1.7B 为 0.66s），中文 CER 同级。备选 qwen3asr（52 语种， multilingual 用）。
+# ---------------------------------------------------------------------------
+stt:
+  backend: qwen3asr_flash                # 阿里云百炼 DashScope Qwen3-ASR-Flash（OpenAI 兼容模式）
+  model_name: qwen3-asr-flash
+  language: zh                           # 用户说中文；雪乃日语回答（LLM 侧转换）
+  # base_url: https://dashscope.aliyuncs.com/compatible-mode/v1   # 默认值，可按地域替换
+
+# ---------------------------------------------------------------------------
+# LLM：对话模型。chat-completions = OpenAI 兼容 /v1/chat/completions。
+# DeepSeek 关 thinking 由 launch.py 在 extra_body 里处理（thinking.type=disabled）；
+# 不要配 reasoning_effort: none——DeepSeek 只认 high/low/medium/max/xhigh，none 会 400。
+# ---------------------------------------------------------------------------
+llm:
+  backend: chat-completions
+  model_name: deepseek-v4-flash
+  base_url: https://api.deepseek.com/v1
+  api_key_env: DEEPSEEK_API_KEY    # 从环境变量读 key（启动时加载 .env.local），缺失即报错
+  # 流式：逐句送 TTS，长回复首音从等整段 3-5s 降到 ~0.5s，代价是语调上下文略平；
+  # 回退：stream: false（整段送 TTS，prosody 更自然）
+  stream: true
+  stream_batch_sentences: 1    # 攒几句送一次 TTS：1 = 逐句，首音最快
+  chat_size: 30                    # 多轮历史上限
+
+# ---------------------------------------------------------------------------
+# TTS：文字转语音。voxcpm = 自定义积木（voxemw.pipeline.tts_voxcpm），
+# openbmb/VoxCPM2：Ultimate Cloning 音色克隆 + 流式输出（48kHz → 16kHz）。
+# 音色表自动取 personas 注册表全员（启动时预编码 prompt cache，
+# 前端切换人设时经 session.update 的 audio.output.voice 热切换，无需重启）。
+# ---------------------------------------------------------------------------
+tts:
+  backend: gptsovits                 # gptsovits 当前生效（推理服务 127.0.0.1:8899，voice=weak）
+                                     #   cd "$GPT_SOVITS_ROOT" && nohup ... scripts/gptsovits_server.py）
+  # gptsovits 专用参数（backend=gptsovits 时生效）：
+  server_url: http://127.0.0.1:8899   # 推理服务地址（WSL2 内）
+  speed: 1.0                          # 语速（回退，1.0 默认）
+  model_name: openbmb/VoxCPM2         # voxcpm 专用
+  device: cuda                           # 别写 cuda:0——官方 optimize() 只认字符串 "cuda"
+  sample_rate: 16000                     # 管线全程 16kHz，勿改
+  blocksize: 512
+  cfg_value: 2.0                         # 官方推荐值；越大越贴近参考音色，过高会僵硬
+                                         # （16k 单片段参考实验后回 2.0，崩坏排查见 ab_ref_compare）
+  inference_timesteps: 10                # 扩散步数,官方推荐 10；调低更快更糙
+  optimize: false                        # torch.compile：启动慢一两分钟，RTF ~1.0 → ~0.3-0.5
+                                         # 本机（WSL2，无 CUDA toolkit/nvcc）必须 false——Inductor 编译
+                                         # 找不到 nvcc 直接崩（PermissionError: nvcc）
+  # 语速补偿：VoxCPM2 克隆语速实测比 ref.wav 快 ~12%。曾用 atempo 0.886 保调
+  # 变速对齐 ref 语速，但用户 A/B 试听确认 atempo 频域处理是"电音感"来源
+  # （2026-08-11：10t_raw vs 10t_atempo 同段音频，变速版明显更"电"）。
+  # 音色优先：关闭变速（1.0 = 不处理），接受语速比参考音色快 ~12%。
+  rate: 1.0                              # 关闭 atempo 变速（去除电音感）
+  # 双语模式（日语对话+中文翻译）：LLM 按 persona 约定输出「【日语】…【译文】…」，
+  # 只合成【日语】段朗读（VoxCPM2 支持日语，无需语言标签），【译文】段由管线
+  # 以 vox.translation.delta 事件下发前端显示。false = 整段朗读（原行为）
+  bilingual: true
+  # load_denoiser: true                  # 参考音频有底噪再开（额外下 ModelScope 降噪模型）
+
+# ---------------------------------------------------------------------------
+# Avatar：数字人形象。backend 选择引擎（voxemw/avatar/factory.py）：
+#   avtr1（默认）= AVTR-1 真人说话头（TensorRT，须 pixi env + avtr1_storage，
+#   参考图须 16:9 横版胸像——脸宽占图宽 ~20%、头顶留白 ~19%，方图脸会拉变形）
+#   tha3 = Talking Head Anime 3 动漫参数化说话头（PyTorch，项目 .venv，
+#   本地 RTX 5080 实时 ~10-30ms/帧；输入 512×512 正脸胸像，嘴眼无遮挡，
+#   scripts/prepare_tha3_image.py 从立绘裁剪，权重 scripts/fetch_tha3_models.py 下载）
+#   viseme = 动漫口型贴片合成（方案 A，零模型纯合成，画风 100% 保真）
+#   （三者均为后端 GPU 进程：voxemw.avatar.service，orchestrator 经 ws 推送
+#   音频、收视频帧，协议一致；avatar_backend 下发前端选择音频延迟参数。）
+#   2dlive = 雪乃 Live2D Cubism 4 纯前端 WebGL 渲染（浏览器本地渲染，零后端
+#   进程：pixi.js + pixi-live2d-display + Cubism 4 Core，模型资产在
+#   web/live2d/models/yukino/，?outfit=shihuku 可切换私服）。口型由 TTS 播放链
+#   AnalyserNode 实时 RMS 驱动，RMS 映射沿用 viseme 校准值 rms_floor=0.003 /
+#   rms_ceil=0.25 / curve_power=1.3 / open_min=0.05 / open_max=0.95 /
+#   ema_attack=0.45 / ema_release=0.18，见 web/yukino2d.js）。
+#   旧三部件伪 Live2D 备份在 web/yukino2d.legacy.js；:8767 空闲；
+#   enabled: false 仍降级纯语音。
+# enabled: false 或 persona 缺 ref_image 时自动降级为纯语音模式。
+# ---------------------------------------------------------------------------
+avatar:
+  enabled: true
+  backend: 2dlive                       # avtr1 | tha3 | viseme | 2dlive
+  tha3_storage: data/models            # THA3 权重根目录（其下 <variant>/*.pt，backend=tha3 用）
+  # --- viseme 引擎（方案 A 口型贴片合成，零模型画风 100% 保真）---
+  # 锚点：立绘原图坐标（scripts/prepare_tha3_image.py 无参数模式生成网格
+  # 参考图，人工报格子换算；以下为雪乃 ref.png 2026-08-09 校准值）
+  viseme:
+    view_rect: [259, 500, 1148, 1000]    # 16:9 脸特写窗口（含眼嘴+留白）
+    mouth_rect: [632, 847, 788, 879]     # 嘴矩形（唇色检测）
+    eye_left_rect: [541, 666, 640, 725]  # 左眼矩形
+    eye_right_rect: [782, 666, 881, 725] # 右眼矩形
+    open_max_px: 30                      # 最大开口（立绘 px）——口型幅度主旋钮
+    rms_floor: 0.003                     # 音量→开合度 dB 映射下限（~-50dBFS）
+    rms_peak: 0.25                       # 上限（~-12dBFS）
+    curve_power: 1.3                     # 弱音不张嘴、强音不开满
+    mouth_floor: 0.05                    # 开合度下限（静音近闭不僵死）
+    mouth_peak: 0.95                     # 开合度上限
+    ema_attack: 0.45                     # 开口速度（每帧）
+    ema_release: 0.18                    # 闭嘴惯性（每帧）
+    blink_interval: [3, 7]               # 眨眼随机间隔（秒）
+    blink_duration: 0.4                  # 单次眨眼时长（快闭缓开）
+    sway_amp_x: 3.0                      # 摆头幅度（画布 px）
+    sway_amp_y: 2.0                      # 呼吸起伏（画布 px）
+    nod_amp: 3.0                         # 倾听点头（画布 px）
+    bg_color: [24, 26, 32]               # 画布填充色（窗口铺满高度时无外露）
+  # --- tha3 引擎专属（backend=tha3 用）---
+  tha3:
+    variant: separable_float           # pip 包 tha3 自带 separable_float 权重（国内镜像
+                                       # 装包即得）；standard_float 效果更细但需自行下载
+    image: assets/yukino/tha3_input.png   # 512×512 胸像（prepare_tha3_image.py 生成）
+    bg_color: [24, 26, 32]             # 16:9 画布左右填充色（页面深色系）
+    rms_floor: 0.003                   # 音量→开合度 dB 映射下限（~-50dBFS）
+    rms_peak: 0.25                     # 上限（~-12dBFS）
+    mouth_k: 0.9                       # 开合度总体缩放（防开满）
+    curve_power: 1.3                   # 弱音不张嘴、强音不开满
+    mouth_floor: 0.05                  # 开合度下限（防全闭嘴，静音近闭不僵死）
+    mouth_peak: 0.95                   # 开合度上限
+    smooth: 0.3                        # 开合度 EMA（每 chunk；调低更跟音节、调高更稳）
+    blink_interval: [3, 7]             # 眨眼随机间隔（秒）
+    blink_duration: 0.4                # 单次眨眼时长（快闭缓开）
+    head_motion: true                  # 低频头动/呼吸微动
+    vowel_detect: false                # 五元音口型分类（二期预留，暂只音量驱动）
+  # --- 仅 avtr1 用（backend=tha3 时忽略）---
+  avtr1_storage: ~/avtr1_storage       # AVTR1_LOCAL_STORAGE（权重+TRT 引擎）
+  avtr1_bg: plain_white                # 合成背景 id（pasteback 区域外才生效）
+  device: cuda
+  fps: 15                              # 推流帧率目标（4090 实时可到 25，先保守）
+  jpeg_quality: 95                     # LAN/隧道带宽充足,95 块效应基本不可见;网络抖时降 80
+  idle_motion: true                    # 常驻微动：无语音时静音驱动（眨眼/轻摇头/倾听反应）
+  port: 8767                           # avatar service 内部 ws 端口
+  host: 127.0.0.1
+
+# ---------------------------------------------------------------------------
+# Filler：垫音（已弃用，2026-08-02）。曾用于转写完成即播预渲染口头禅盖住 LLM 首句
+# 空白，实测衔接自然度不达标。代码保留（orchestrator 垫音管线 + fillers/ 素材 +
+# 情绪分组），重开即 true。
+# ---------------------------------------------------------------------------
+filler:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# Memory：记忆积木（第七块）。Mem0 内嵌模式——LLM 抽取走 DeepSeek（OpenAI 兼容），
+# embedding 本地 bge-m3（DeepSeek 无 embedding API），向量库内嵌 qdrant 文件落盘。
+# 会话开始时召回注入 instructions（一次性）；response.done 后异步写入（不占语音延迟）。
+# 默认关，验收后开。
+# ---------------------------------------------------------------------------
+memory:
+  enabled: true
+  user_id: emw
+  top_k: 5
+  store_dir: data/memory
+  # embedding 走 OpenAI 兼容 API（本地 bge-m3 加载失败后切换，实测 1024 维）
+  embedder_model: qwen3.7-text-embedding
+  embedder_base_url: https://api.aiqingxuan.top/v1
+  embedder_api_key_env: MEMORY_EMBEDDER_API_KEY   # 从环境变量读（.env.local）
+  embedder_dims: 1024
+
+# ---------------------------------------------------------------------------
+# 对话历史：SQLite 本地落盘，管理页 /history。每轮用户消息和助手回复都会写入
+# log/chat_history.db（会话自动分组，首条用户消息作为标题）。
+# ---------------------------------------------------------------------------
+history:
+  db_path: log/chat_history.db
+
+# ---------------------------------------------------------------------------
+# Weibo：峰哥动态积木。scripts/weibo_collector.py 经 WebBridge 抓微博入 SQLite，
+# 会话开始把最近 top_n 条注入人设（峰哥「记得」自己今天在忙啥）。
+# ---------------------------------------------------------------------------
+weibo:
+  enabled: false                         # 峰哥专属：注入的是峰哥微博动态，雪乃人设下必须关
+  db_path: data/weibo.db
+  top_n: 8
+
+# ---------------------------------------------------------------------------
+# 人设注册表：key = persona id（前端切换、TTS 音色名都用它），
+# value = 女娲蒸馏产物。每个文件的 frontmatter 声明三件套：
+#   name（显示名）/ ref_wav（音色参考音）/ ref_text（逐字台词）/ ref_image（数字人肖像）
+# ---------------------------------------------------------------------------
+personas:
+  default: yukino
+  list:
+    yukino: personas/yukino.md
+
+# ---------------------------------------------------------------------------
+# 服务参数。
+# ---------------------------------------------------------------------------
+server:
+  s2s_host: 127.0.0.1       # s2s realtime ws（orchestrator 内部连接，不对外）
+  s2s_port: 8765
+  host: 0.0.0.0             # orchestrator 对外（Web 静态页 + ws）
+  port: 8000
+  log_level: info
+  # 说话中每 0.5s 送一块中间音频给 STT 做实时预览（上游默认开）。前端只展示
+  # 最终转写，开着只会让 STT 反复转写片段、浪费 GPU；关掉后 STT 只处理完整语音段
+  enable_live_transcription: false
+  num_pipelines: 1          # 并发会话数 = 隔离管线数；每多一条多一份模型显存，24GB 保持 1

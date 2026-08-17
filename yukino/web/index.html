@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <!-- iPad 全屏:加到主屏幕后独立打开,无地址栏;状态栏随页面底色 -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#f6eef2" />
+  <title>VoxEMW · 数字人语音助手</title>
+  <!-- 内联 favicon：避免浏览器请求 /favicon.ico 404（orchestrator 未提供） -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23f77fa8'/></svg>" />
+  <link rel="stylesheet" href="/static/style.css?v=20260816b" />
+</head>
+<body>
+
+  <!-- 布局参考 yukino Vtuber live 2d/vtuber_model：模型全屏舞台 + UI 面板悬浮右侧 -->
+  <!-- 左侧对话历史抽屉：默认隐藏，点击左侧按钮展开 -->
+  <button id="history-toggle" class="history-toggle" title="对话历史">🕘</button>
+  <aside id="history-sidebar" class="history-sidebar">
+    <div class="history-sidebar-header">
+      <span class="history-title" id="history-title">对话历史</span>
+      <button id="history-close" class="history-close" title="关闭">×</button>
+    </div>
+    <div class="history-toolbar">
+      <button id="history-new" class="history-new">＋ 新会话</button>
+      <span class="history-toolbar-spacer"></span>
+      <button id="history-refresh" class="history-back">刷新</button>
+      <button id="history-back" class="history-back">返回</button>
+    </div>
+    <div id="history-list" class="history-list"></div>
+  </aside>
+
+  <main class="stage">
+    <div class="stage-bg"></div>
+
+    <canvas id="avatar-canvas"></canvas>
+    <img id="avatar-still" alt="" />
+    <div id="avatar-fallback" class="avatar-fallback hidden">纯语音模式（数字人未就绪）</div>
+    <span id="avatar-state" class="hidden"></span>
+  </main>
+
+  <!-- 对话面板：固定悬浮最右侧（同独立版 #ui 位置，全高对话） -->
+  <aside class="panel">
+    <header class="panel-header">
+      <span id="avatar-label" class="char-name"></span>
+      <span id="status" class="status">未连接</span>
+    </header>
+
+    <div class="chat-log" id="transcript" aria-live="polite"></div>
+
+    <nav id="persona-bar" class="persona-bar" aria-label="人设切换"></nav>
+
+    <footer class="controls" id="controls">
+      <button id="mic-btn" class="mic-btn" disabled>🎙 开始对话</button>
+      <p class="hint">开始后直接说话即可，随时可以打断她/他。</p>
+    </footer>
+  </aside>
+
+  <!-- Live2D Cubism 4 运行时：顺序不能变（core 必须在 cubism4 之前） -->
+  <script src="/static/live2d/runtime/pixi.min.js"></script>
+  <script src="/static/live2d/runtime/live2dcubismcore.min.js"></script>
+  <script src="/static/live2d/runtime/cubism4.min.js"></script>
+  <script src="/static/yukino2d.js?v=20260816r"></script>
+  <script src="/static/assistant.js?v=20260816w"></script>
+</body>
+</html>

@@ -1,0 +1,292 @@
+{
+	"Version": 3,
+	"Meta": {
+		"Duration": 1.33,
+		"Fps": 30.0,
+		"FadeInTime": 1.0,
+		"FadeOutTime": 1.0,
+		"Loop": true,
+		"AreBeziersRestricted": true,
+		"CurveCount": 15,
+		"TotalSegmentCount": 30,
+		"TotalPointCount": 77,
+		"UserDataCount": 0,
+		"TotalUserDataSize": 0
+	},
+	"Curves": [
+		{
+			"Target": "Parameter",
+			"Id": "PARAM_EYE_URU",
+			"Segments": [
+				0,
+				0,
+				1,
+				0.033,
+				0,
+				0.067,
+				1,
+				0.1,
+				1,
+				1,
+				0.122,
+				1,
+				0.144,
+				0,
+				0.167,
+				0,
+				1,
+				0.2,
+				0,
+				0.233,
+				1,
+				0.267,
+				1,
+				1,
+				0.289,
+				1,
+				0.311,
+				0,
+				0.333,
+				0,
+				1,
+				0.367,
+				0,
+				0.4,
+				1,
+				0.433,
+				1,
+				1,
+				0.456,
+				1,
+				0.478,
+				0,
+				0.5,
+				0,
+				1,
+				0.533,
+				0,
+				0.567,
+				1,
+				0.6,
+				1,
+				1,
+				0.622,
+				1,
+				0.644,
+				0,
+				0.667,
+				0,
+				1,
+				0.7,
+				0,
+				0.733,
+				1,
+				0.767,
+				1,
+				1,
+				0.789,
+				1,
+				0.811,
+				0,
+				0.833,
+				0,
+				1,
+				0.867,
+				0,
+				0.9,
+				1,
+				0.933,
+				1,
+				1,
+				0.956,
+				1,
+				0.978,
+				0,
+				1,
+				0,
+				1,
+				1.033,
+				0,
+				1.067,
+				1,
+				1.1,
+				1,
+				1,
+				1.122,
+				1,
+				1.144,
+				0,
+				1.167,
+				0,
+				1,
+				1.2,
+				0,
+				1.233,
+				1,
+				1.267,
+				1,
+				1,
+				1.289,
+				1,
+				1.311,
+				0,
+				1.333,
+				0
+			]
+		},
+		{
+			"Target": "PartOpacity",
+			"Id": "PARTS_01_BODY",
+			"Segments": [
+				0,
+				0,
+				0,
+				1.33,
+				0
+			]
+		},
+		{
+			"Target": "PartOpacity",
+			"Id": "PARTS_SIHUKU_HAND_R_01",
+			"Segments": [
+				0,
+				1,
+				0,
+				1.33,
+				1
+			]
+		},
+		{
+			"Target": "PartOpacity",
+			"Id": "PARTS_SIHUKU",
+			"Segments": [
+				0,
+				1,
+				0,
+				1.33,
+				1
+			]
+		},
+		{
+			"Target": "PartOpacity",
+			"Id": "PARTS_SEIHUKU_HAND_L_02",
+			"Segments": [
+				0,
+				0,
+				0,
+				1.33,
+				0
+			]
+		},
+		{
+			"Target": "PartOpacity",
+			"Id": "PARTS_SEIHUKU_HAND_L_01",
+			"Segments": [
+				0,
+				1,
+				0,
+				1.33,
+				1
+			]
+		},
+		{
+			"Target": "PartOpacity",
+			"Id": "PARTS_SEIHUKU_HAND_R_02",
+			"Segments": [
+				0,
+				0,
+				0,
+				1.33,
+				0
+			]
+		},
+		{
+			"Target": "PartOpacity",
+			"Id": "PARTS_SEIHUKU_HAND_R_01",
+			"Segments": [
+				0,
+				0,
+				0,
+				1.33,
+				0
+			]
+		},
+		{
+			"Target": "PartOpacity",
+			"Id": "PARTS_SIHUKU_ARM_L_01",
+			"Segments": [
+				0,
+				1,
+				0,
+				1.33,
+				1
+			]
+		},
+		{
+			"Target": "PartOpacity",
+			"Id": "PARTS_SEIHUKU_ARM_L_01",
+			"Segments": [
+				0,
+				0,
+				0,
+				1.33,
+				0
+			]
+		},
+		{
+			"Target": "PartOpacity",
+			"Id": "PARTS_SIHUKU_ARM_R_01",
+			"Segments": [
+				0,
+				1,
+				0,
+				1.33,
+				1
+			]
+		},
+		{
+			"Target": "PartOpacity",
+			"Id": "PARTS_SEIHUKU_ARM_R_01",
+			"Segments": [
+				0,
+				0,
+				0,
+				1.33,
+				0
+			]
+		},
+		{
+			"Target": "PartOpacity",
+			"Id": "PARTS_SEIHUKU",
+			"Segments": [
+				0,
+				0,
+				0,
+				1.33,
+				0
+			]
+		},
+		{
+			"Target": "PartOpacity",
+			"Id": "PARTS_01_SIHUKU_NECK",
+			"Segments": [
+				0,
+				1,
+				0,
+				1.33,
+				1
+			]
+		},
+		{
+			"Target": "PartOpacity",
+			"Id": "PARTS_01_SEIHUKU_NECK",
+			"Segments": [
+				0,
+				0,
+				0,
+				1.33,
+				0
+			]
+		}
+	]
+}

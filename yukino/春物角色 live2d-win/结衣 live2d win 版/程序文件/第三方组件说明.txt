@@ -1,0 +1,18 @@
+本地网页包含以下第三方运行组件：
+
+1. PixiJS 6.5.10
+   Copyright (c) 2013-2023 Mat Groves, Chad Engler
+   使用 MIT License。
+
+2. pixi-live2d-display 0.4.0
+   Copyright (c) 2020-2022 guansss
+   使用 MIT License。
+
+3. Live2D Cubism Core
+   Copyright (c) Live2D Inc. All rights reserved.
+   属于 Live2D 许可协议中的 Redistributable Code。
+   许可协议：https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html
+
+4. React 19.2.6 / React DOM 19.2.6
+   Copyright (c) Meta Platforms, Inc. and affiliates.
+   使用 MIT License。

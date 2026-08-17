@@ -1,0 +1,103 @@
+{
+	"Version": 3,
+	"Meta": {
+		"Duration": 1.033,
+		"Fps": 30.0,
+		"FadeInTime": 1.0,
+		"FadeOutTime": 1.0,
+		"Loop": true,
+		"AreBeziersRestricted": true,
+		"CurveCount": 3,
+		"TotalSegmentCount": 11,
+		"TotalPointCount": 28,
+		"UserDataCount": 0,
+		"TotalUserDataSize": 0
+	},
+	"Curves": [
+		{
+			"Target": "Parameter",
+			"Id": "PARAM___AP",
+			"Segments": [
+				0,
+				0,
+				1,
+				0.056,
+				0,
+				0.111,
+				1,
+				0.167,
+				1,
+				1,
+				0.333,
+				1,
+				0.5,
+				1,
+				0.667,
+				1,
+				1,
+				0.778,
+				1,
+				0.889,
+				0,
+				1,
+				0,
+				0,
+				1.033,
+				0
+			]
+		},
+		{
+			"Target": "Parameter",
+			"Id": "PARAM___R",
+			"Segments": [
+				0,
+				0,
+				1,
+				0.078,
+				0,
+				0.156,
+				0,
+				0.233,
+				0,
+				0,
+				1.033,
+				0
+			]
+		},
+		{
+			"Target": "Parameter",
+			"Id": "PARAM___R3",
+			"Segments": [
+				0,
+				0,
+				0,
+				0.067,
+				0,
+				1,
+				0.122,
+				0,
+				0.178,
+				0.708,
+				0.233,
+				0.9,
+				1,
+				0.256,
+				0.977,
+				0.278,
+				0.962,
+				0.3,
+				0.986,
+				1,
+				0.311,
+				0.998,
+				0.322,
+				1,
+				0.333,
+				1,
+				0,
+				1.033,
+				1
+			]
+		}
+	]
+}

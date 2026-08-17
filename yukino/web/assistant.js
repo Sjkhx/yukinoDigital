@@ -970,7 +970,45 @@ async function init() {
   }
   updatePersonaBar();
   setAvatarState("idle");
+  restoreLatestConversation();
   connect();
+}
+
+// 进页时自动恢复最近一条对话到主区（不进历史抽屉），避免重开 yukino 是空会话。
+// 雪乃是单用户单会话产品，ws 每次连接都新建 session_id，故靠 updated_at 取最近历史恢复。
+async function restoreLatestConversation() {
+  try {
+    const res = await fetch("/api/history/latest");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.enabled || !data.conversation) return;
+    const messages = data.messages || [];
+    if (!messages.length) return;
+    els.transcript.innerHTML = "";
+    assistantLine = null;
+    assistantBody = null;
+    translationLine = null;
+    assistantJaText = "";
+    const personaName = (personas.find((p) => p.id === currentPersona) || {}).name || "雪乃";
+    for (const m of messages) {
+      if (m.role === "user") {
+        addLine("user", "你", m.content || "");
+      } else {
+        const txt = addLine("assistant", personaName, m.content || "");
+        if (m.translation) appendTranslationDelta(m.translation);
+        assistantLine = null;
+        assistantBody = null;
+        translationLine = null;
+      }
+    }
+    assistantLine = null;
+    if (els.transcript.lastElementChild) {
+      els.transcript.scrollTop = els.transcript.scrollHeight;
+    }
+  } catch (e) {
+    // 恢复失败不阻塞主流程，ws 照常连
+    console.warn("[restoreLatestConversation] 失败:", e);
+  }
 }
 
 els.micBtn.onclick = async () => {

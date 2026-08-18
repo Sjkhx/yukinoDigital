@@ -347,3 +347,59 @@ body.history-open .history-sidebar { transform: translateX(0); }
   }
   #avatar-state { top: 8px; left: 8px; }
 }
+
+/* 打字输入行（全屏/紧凑共用） */
+.text-input-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  text-align: left;
+}
+.text-input-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+}
+.text-input-row input:focus { border-color: var(--pink); }
+.text-input-row input::placeholder { color: #c9bcc5; }
+.send-btn {
+  padding: 0 18px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ff9dbe, var(--pink));
+  color: #fff;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.send-btn:hover { transform: translateY(-1px); }
+
+/* ========== 紧凑面板模式（?compact=1，DSH 右侧 1/4 屏嵌入） ========== */
+body.compact .stage {
+  inset: 0 0 42% 0;              /* 上部 58%：Live2D 舞台 */
+}
+body.compact .panel {
+  position: fixed;
+  top: 58%;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  z-index: 10;
+  border-radius: 14px 14px 0 0;
+  padding: 12px 12px 10px;
+  box-shadow: 0 -8px 24px rgba(180, 140, 165, 0.2);
+}
+body.compact .history-toggle,
+body.compact .history-sidebar { display: none !important; }
+body.compact .hint { display: none; }
+body.compact .panel-header { padding-bottom: 8px; }
+body.compact .persona-bar { margin-top: 6px; }
+body.compact .mic-btn { padding: 8px 24px; font-size: 14px; }

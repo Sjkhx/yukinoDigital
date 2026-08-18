@@ -189,6 +189,8 @@ def yukino_task_done_reply(project: str, title: str, summary: str, config: dict)
         f"项目：{project}\n"
         f"会话：{title}\n"
         f"最新总结：{summary or '（无详细结果）'}\n"
+        "总结里有具体信息（项目名、版本、关键结论等），回复时自然地提到一两个，\n"
+        "证明你真的看了内容，但别照抄整段、也别只泛泛而谈。\n"
         "记住：用你的固定格式，先日语后中文译文。"
     )
     body = {
@@ -352,7 +354,8 @@ class Session:
     def __init__(self, browser_ws, s2s_url: str, avatar_url: str | None,
                  personas: dict, default_persona: str,
                  filler_enabled: bool = True, avatar_backend: str = "avtr1",
-                 memory_store=None, history_store=None, weibo_cfg: dict | None = None):
+                 memory_store=None, history_store=None, weibo_cfg: dict | None = None,
+                 context_file: str | None = None):
         import datetime
         import uuid
 
@@ -370,6 +373,7 @@ class Session:
         weibo_cfg = weibo_cfg or {}
         self.weibo_db = weibo_cfg.get("db_path") if weibo_cfg.get("enabled") else None
         self.weibo_top_n = int(weibo_cfg.get("top_n", 8))
+        self.context_file = context_file  # 项目背景上下文文件（log/project_context.md）
         self._turn_user_text = ""       # 本轮用户转写（记忆/历史写入用）
         self._turn_assistant_text = ""  # 本轮助手回复（记忆/历史写入用）
         self._turn_translation = ""     # 本轮译文（vox.translation.delta 累积）
@@ -490,6 +494,20 @@ class Session:
             "回答涉及日期/时间的问题时以此为准，例如「今天」即上述日期。\n"
         )
         instructions = time_block + instructions
+        # 项目背景：从 log/project_context.md 注入（用户维护的文件，缺失/空则跳过）。
+        # 让雪乃知道自己在被集成进什么项目，回答"这项目做了什么"类问题有依据。
+        if self.context_file:
+            try:
+                ctx_path = Path(self.context_file)
+                if not ctx_path.is_absolute():
+                    ctx_path = REPO_ROOT / ctx_path
+                if ctx_path.is_file():
+                    ctx_text = ctx_path.read_text(encoding="utf-8").strip()
+                    if ctx_text:
+                        instructions = instructions + "\n\n# 项目背景\n" + ctx_text
+                        logger.info("项目背景注入（%d 字符）", len(ctx_text))
+            except Exception as e:
+                logger.warning("项目背景注入失败（跳过）: %s", e)
         if self.memory is not None:
             try:
                 from voxemw.memory import build_core_block, build_memory_block
@@ -564,6 +582,18 @@ class Session:
                 continue
             if event.get("type") == "vox.drained":
                 continue  # 帧合流后该信号仅作时序参考，无需动作
+            # 打字输入：用户文本经 conversation.item.create（input_text）进 s2s，
+            # 这里同步写历史（镜像 ASR 转写的 _write_history_user 路径）
+            if event.get("type") == "conversation.item.create":
+                _item = event.get("item") or {}
+                if _item.get("role") == "user":
+                    for _part in (_item.get("content") or []):
+                        if isinstance(_part, dict) and _part.get("type") == "input_text":
+                            _text = (_part.get("text") or "").strip()
+                            if _text:
+                                self._turn_user_text = _text
+                                self._write_history_user()
+                            break
             # listen 轨 tee：用户说话段（server VAD 门控，防环境噪音/回声引起多余反应）
             # 的麦克风音频转发给 avatar 做 active listening（官方 listen 轨常开，
             # 这里按段转发是 deliberate 的门控收敛）
@@ -949,6 +979,11 @@ def create_app(config: dict):
             raw_text = f"{project}项目，上一轮做「{title}」的任务完成了。"
             if summary:
                 raw_text += f" {summary}"
+        # 调试：确认插件到底传了什么（长度 + 开头），排查"雪乃没提具体内容"
+        logger.info(
+            "task-done 收到: project=%r title=%r summary_len=%d summary_head=%r",
+            project, title, len(summary), summary[:120],
+        )
         if not raw_text:
             return web.json_response({"ok": False, "error": "缺少 text/project"}, status=400)
 
@@ -1037,7 +1072,8 @@ def create_app(config: dict):
                           filler_enabled=filler_enabled,
                           avatar_backend=avatar_backend, memory_store=memory_store,
                           history_store=history_store,
-                          weibo_cfg=config.get("weibo"))
+                          weibo_cfg=config.get("weibo"),
+                          context_file=(config.get("project") or {}).get("context_file"))
         current_session["session"] = session
         try:
             await session.run()

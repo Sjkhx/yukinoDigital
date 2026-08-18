@@ -117,7 +117,9 @@
     };
     canvas.dataset.live2d = "loading";
     // 右侧对话面板悬浮宽度（12px 间距 + 380px 面板）：模型在余下舞台居中。
-    const PANEL_RESERVE = (opts && opts.panelWidth) || 392;
+    // 紧凑面板模式（body.compact，?compact=1）：对话面板在下方不在右侧，预留 0。
+    const PANEL_RESERVE = (opts && opts.panelWidth)
+      || (document.body.classList.contains("compact") ? 0 : 392);
     // 放大倍数：原 fit 尺寸 * 1.5（用户要求），模型更大更有存在感。
     const SCALE_BOOST = (opts && opts.scaleBoost) || 1.5;
     // 手臂/手部图层：模型默认 render order 里手臂一部分被身体/头发/脸压住。

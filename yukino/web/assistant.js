@@ -35,6 +35,8 @@ const els = {
   personaBar: document.getElementById("persona-bar"),
   transcript: document.getElementById("transcript"),
   micBtn: document.getElementById("mic-btn"),
+  textInput: document.getElementById("text-input"),
+  sendBtn: document.getElementById("send-btn"),
   historyBtn: document.getElementById("history-toggle"),
   historyView: document.getElementById("history-sidebar"),
   historyClose: document.getElementById("history-close"),
@@ -64,6 +66,9 @@ let resumeMicOnDrain = false; // true = 已收到 response.done/error，只等�
 // solo 模式（?solo=1）：demo 录制用，隐藏用户画面、数字人单栏居中、不开摄像头
 const SOLO_MODE = new URLSearchParams(location.search).has("solo");
 if (SOLO_MODE) document.body.classList.add("solo");
+// 紧凑面板模式（?compact=1）：DSH 右侧 1/4 屏嵌入式面板，上部 Live2D、下部对话+打字
+const COMPACT_MODE = new URLSearchParams(location.search).has("compact");
+if (COMPACT_MODE) document.body.classList.add("compact");
 
 // Live2D Cubism 4 模型：默认制服（yukino_seihuku），?outfit=shihuku 切换私服
 const LIVE2D_MODEL_URL = new URLSearchParams(location.search).get("outfit") === "shihuku"
@@ -1030,5 +1035,76 @@ els.micBtn.onclick = async () => {
     return;
   }
 };
+
+// 打字输入：文本经 conversation.item.create（user input_text）进 s2s LLM，
+// 再 response.create 触发回复；orchestrator 原样透传，回复走现有 response.* 事件。
+function sendText() {
+  const text = (els.textInput.value || "").trim();
+  if (!text) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    addLine("sys", "", "⚠ 未连接，稍后再试");
+    return;
+  }
+  addLine("user", "你", text);
+  ws.send(JSON.stringify({
+    type: "conversation.item.create",
+    item: { type: "message", role: "user", content: [{ type: "input_text", text }] },
+  }));
+  ws.send(JSON.stringify({ type: "response.create" }));
+  els.textInput.value = "";
+  els.transcript.scrollTop = els.transcript.scrollHeight;
+}
+
+if (els.sendBtn && els.textInput) {
+  els.sendBtn.onclick = sendText;
+  els.textInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.isComposing) sendText();
+  });
+}
+
+// DSH 插件（基础面板）经 postMessage 控制紧凑页：新会话 / 载入指定历史会话
+window.addEventListener("message", (e) => {
+  const data = e.data || {};
+  if (data.type === "yukino.new-session") {
+    newConversation();
+  } else if (data.type === "yukino.load-history" && data.sessionId) {
+    loadSessionIntoTranscript(data.sessionId);
+  }
+});
+
+// 把指定历史会话的文本载入主区（与 restoreLatestConversation 同款渲染；
+// 当前 ws 会话不变，新消息仍写入新会话）
+async function loadSessionIntoTranscript(sid) {
+  let messages = [];
+  try {
+    const res = await fetch(`/api/history/${sid}`);
+    const data = await res.json();
+    messages = data.messages || [];
+  } catch (e) {
+    messages = [];
+  }
+  if (!messages.length) return;
+  els.transcript.innerHTML = "";
+  assistantLine = null;
+  assistantBody = null;
+  translationLine = null;
+  assistantJaText = "";
+  const personaName = (personas.find((p) => p.id === currentPersona) || {}).name || "雪乃";
+  for (const m of messages) {
+    if (m.role === "user") {
+      addLine("user", "你", m.content || "");
+    } else {
+      const txt = addLine("assistant", personaName, m.content || "");
+      if (m.translation) appendTranslationDelta(m.translation);
+      assistantLine = null;
+      assistantBody = null;
+      translationLine = null;
+    }
+  }
+  assistantLine = null;
+  if (els.transcript.lastElementChild) {
+    els.transcript.scrollTop = els.transcript.scrollHeight;
+  }
+}
 
 init();

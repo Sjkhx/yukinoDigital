@@ -415,6 +415,7 @@ class Session:
                 logger.warning("persona 下发失败，结束本会话: %s", e)
                 return
             await self._send_status()
+            await self._flush_pending_speech()
             tasks = [
                 asyncio.create_task(self._browser_to_s2s()),
                 asyncio.create_task(self._s2s_to_browser()),
@@ -447,6 +448,30 @@ class Session:
             "avatar_backend": self.avatar_backend,
             "persona": self.persona_id,
         }))
+
+    async def _flush_pending_speech(self) -> None:
+        """补播页面未开时积压的 task-done 音频（前端恢复历史文字已显示，
+        这里只推音频不重复推文本）。失败不重试——下个连接会再补。"""
+        if self.history is None:
+            return
+        try:
+            items = await asyncio.to_thread(self.history.list_unplayed_speeches, 10)
+        except Exception as e:
+            logger.info("读取待播报队列失败（忽略）: %s", e)
+            return
+        for item in items:
+            pcm = item.get("pcm")
+            if not pcm:
+                continue
+            try:
+                await self.browser.send_str(json.dumps({
+                    "type": "vox.task-done-audio",
+                    "pcm": base64.b64encode(pcm).decode(),
+                }))
+                await asyncio.to_thread(self.history.mark_speech_played, item["id"])
+            except Exception as e:
+                logger.info("补播待播报音频失败（下个连接重试）: %s", e)
+                return
 
     async def _apply_persona(self, persona_id: str) -> None:
         persona = self.personas[persona_id]
@@ -937,6 +962,12 @@ def create_app(config: dict):
 
         tts_url = str((config.get("tts") or {}).get("server_url", "http://127.0.0.1:8899"))
         session = current_session.get("session")
+
+        # 音频总是合成：有活跃会话就实时推送，没有就存 pending，等下次打开页面补播。
+        # （a64d1fc 让 task-done 在无会话时也写历史，但音频只推活跃 ws——页面没开时
+        # 消息进了历史却没有语音，重开页面恢复成纯文字。）
+        pcm = await asyncio.to_thread(synthesize_task_done_audio, ja_text, tts_url)
+
         if session is not None and session.browser is not None:
             try:
                 await session.browser.send_str(json.dumps({
@@ -948,15 +979,22 @@ def create_app(config: dict):
                 logger.info("推送 task-done 到浏览器失败（忽略）: %s", e)
 
             # 用真实雪乃音色合成日语正文并推送音频（前端只负责播放，口型照常驱动）
-            try:
-                pcm = await asyncio.to_thread(synthesize_task_done_audio, ja_text, tts_url)
-                if pcm:
+            if pcm:
+                try:
                     await session.browser.send_str(json.dumps({
                         "type": "vox.task-done-audio",
                         "pcm": base64.b64encode(pcm).decode(),
                     }))
+                except Exception as e:
+                    logger.info("task-done 音频推送失败（忽略）: %s", e)
+        elif pcm and history_store is not None:
+            try:
+                target_sid = current_session.get("dsh_sid") or ""
+                history_store.add_pending_speech(
+                    target_sid or "dsh-tasks", ja_text, zh_text, pcm)
+                logger.info("页面未开，task-done 音频存入待播报队列")
             except Exception as e:
-                logger.info("task-done 音频推送失败（忽略）: %s", e)
+                logger.info("task-done 待播报音频落库失败（忽略）: %s", e)
 
         if history_store is not None:
             # DSH task-done 写入一个稳定的 DSH 会话 id（不随 ws 重连变化），

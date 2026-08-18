@@ -33,6 +33,16 @@ CREATE TABLE IF NOT EXISTS messages (
     FOREIGN KEY(session_id) REFERENCES conversations(session_id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
+CREATE TABLE IF NOT EXISTS pending_speech (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id  TEXT NOT NULL,
+    ja_text     TEXT NOT NULL,
+    zh_text     TEXT NOT NULL DEFAULT '',
+    pcm         BLOB NOT NULL,
+    created_at  TEXT NOT NULL,
+    played      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_pending_speech_played ON pending_speech(played, id);
 """
 
 
@@ -123,6 +133,33 @@ class ChatHistoryStore:
                     (session_id,),
                 ).fetchall()
         return [dict(r) for r in rows]
+
+    def add_pending_speech(self, session_id: str, ja_text: str,
+                           zh_text: str, pcm: bytes) -> None:
+        """存一条待播报语音（页面未开时 task-done 音频的落点），播放后标记清除。"""
+        with self._lock:
+            with self._connect() as conn:
+                conn.execute(
+                    "INSERT INTO pending_speech(session_id, ja_text, zh_text, pcm, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (session_id, ja_text, zh_text or "", pcm, _now()),
+                )
+
+    def list_unplayed_speeches(self, limit: int = 10) -> list[dict]:
+        with self._lock:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT id, session_id, ja_text, zh_text, pcm, played, created_at "
+                    "FROM pending_speech WHERE played = 0 ORDER BY id ASC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def mark_speech_played(self, speech_id: int) -> None:
+        with self._lock:
+            with self._connect() as conn:
+                conn.execute(
+                    "UPDATE pending_speech SET played = 1 WHERE id = ?", (speech_id,))
 
     def delete_conversation(self, session_id: str) -> bool:
         with self._lock:

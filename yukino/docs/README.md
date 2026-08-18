@@ -35,24 +35,20 @@ orchestrator（CPU，Windows 或 WSL 均可）
 | memory | 自建记忆（DeepSeek 抽取 + qdrant LocalMode 向量库，默认开） |
 | history | SQLite 对话历史（`log/chat_history.db`，每轮自动写入） |
 
-## 快速启动（当前本地环境）
+## 快速启动
 
-### 1. WSL2 内启动 TTS 与语音管线
+环境基于 WSL2（TTS/语音管线需 CUDA GPU）。首次安装见 `docs/SETUP_WSL.md`，
+之后启动只需一条命令：
 
 ```bash
-cd ~/VoxEMW
+# 进入 VoxEMW 目录（仓库的 yukino/ 子目录，或独立克隆的仓库根）
+cd yukino
+
+# 首次：安装环境（建 venv、装依赖、生成 .env.local，幂等）
+bash scripts/setup_wsl.sh
+
+# 启动三服务：GPT-SoVITS（:8899）→ s2s 管线（:8765）→ orchestrator（:8000）
 bash scripts/start_assistant_wsl.sh
-```
-
-> 该脚本会依次启动 GPT-SoVITS V2ProPlus（:8899）、s2s 管线（:8765）、
-> orchestrator（:8000）。如果你已经在 Windows 上跑了 orchestrator，只需
-> 手动启动前两个，见 `scripts/start_assistant_wsl.sh` 前两段。
-
-### 2. Windows 上启动 orchestrator（可选）
-
-```bash
-cd C:\Users\78723\Desktop\file\pyfile\yukino
-python -m voxemw.avatar.orchestrator
 ```
 
 打开：
@@ -60,6 +56,10 @@ python -m voxemw.avatar.orchestrator
 ```text
 http://127.0.0.1:8000/
 ```
+
+> orchestrator（:8000）也可在 Windows 上单独跑：
+> `python -m voxemw.avatar.orchestrator`（`avatar.backend=2dlive` 前端本地渲染，
+> 无需后端 GPU；但完整语音对话仍需 WSL 里的 GPT-SoVITS 与 s2s 管线）。
 
 ## 对话历史
 
@@ -134,6 +134,7 @@ MEMORY_EMBEDDER_API_KEY=...   # memory embedding（可选）
 ## 相关链接
 
 - speech-to-speech: https://github.com/huggingface/speech-to-speech
+- GPT-SoVITS V2ProPlus 代码: https://github.com/jdc4429/GPT-SoVITS-V2ProPlus-Windows
 - DeepSeek API: https://platform.deepseek.com
 - 阿里云百炼 DashScope: https://bailian.console.aliyun.com
 - 雪乃 GPT-SoVITS V2ProPlus 模型包: https://www.ai-hobbyist.com/forum.php?mod=viewthread&tid=159980&page=1&mobile=no

@@ -77,7 +77,11 @@ http://127.0.0.1:8000/
 - 模型资产在 `web/live2d/`（Cubism 4 .moc3 + pixi-live2d-display 运行时）；
 - 默认制服，`?outfit=shihuku` 切换私服；
 - 待机有自然微动，说话时有轻微点头/身体摆动；
+- 待机姿势自动轮换（Pose1/2/3，每 18~32s），切换时手臂 ease + 动作淡入一次平滑过渡；
 - 前端内置情绪 agent，根据本轮日语回复自动选择表情/动作；
+- `web/yukino2d.js` 含运行时 bug 补丁（pixi-live2d-display 忽略 `Meta.Loop` → 补 `setIsLoop`、
+  循环曲线首尾对齐、手臂噪声过渡包络、动作播放在过渡开始即启动）。改前端后需同步 WSL
+  运行副本并升 `index.html` 的 `?v=` 版本号，见 `docs/wsl2-troubleshooting.md` 坑 11；
 - 暴露全局 API 供 agent 调用：
 
 ```js

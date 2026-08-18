@@ -117,6 +117,23 @@ wsl.exe -d Ubuntu -- bash -c 'bash /tmp/start.sh'
 `positive\b.wav`（反斜杠），texts.json 查不到键 → 台词变空串。**WSL2 下通过**，
 与任何业务改动无关，属 Windows 本地环境差异，忽略即可。
 
+## 坑 11：WSL 运行副本前端过期，改 web/ 后雪乃行为不生效
+
+**现象**：改了插件仓库 `web/yukino2d.js` / `web/index.html`（姿势轮换、动作补丁等），
+但 WSL 里雪乃表现不变——跑的还是旧前端。
+
+**根因**：orchestrator 在 WSL `/home/xmy/VoxEMW` 跑，`/static` 挂它自己的 `web/`，
+不是插件仓库那份。`sync_to_wsl.sh` 没跑，或同步了但浏览器仍缓存旧 JS（`?v=` 没升）。
+
+**解法**：
+- 把 `web/yukino2d.js` + `web/index.html` 复制到 WSL 运行副本
+  （`//wsl.localhost/Ubuntu-22.04/home/xmy/VoxEMW/web/`），或跑 `scripts/sync_to_wsl.sh`；
+- 同步前把 `index.html` 里脚本的 `?v=2026xxxx` 版本号升一档（缓存破坏），浏览器硬刷新。
+
+**实例（2026-08-18）**：WSL 的 `yukino2d.js` 是 376 行旧版（无 cyclePose 姿势轮换/预设
+手臂动作），雪乃一直停在默认 Pose1「撩头发」；后端 py/configs 早已同步，唯独前端 JS 漏了。
+把 711 行新版同步到 WSL 后恢复。
+
 ## 环境速查
 
 - 启动（WSL2 内执行，进程全部 setsid 脱离会话）：

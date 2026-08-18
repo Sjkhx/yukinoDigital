@@ -112,6 +112,8 @@
       nextPoseAt: 0,       // 下次自动换 Idle 姿势的时间戳（首次由 boot 设置）
       actionUntil: 0,      // 一次性动作播放期间不自动换姿势
       poseTransition: null, // {from,to,group,start,duration,holdUntil,started}
+      armNoiseEnv: 1,      // 手臂自然动作权重：姿势过渡期间淡出、结束后淡入，避免到位瞬间抖动
+      _lastArmT: 0,
     };
     canvas.dataset.live2d = "loading";
     // 右侧对话面板悬浮宽度（12px 间距 + 380px 面板）：模型在余下舞台居中。
@@ -229,12 +231,27 @@
       if (!mm || typeof mm.createMotion !== "function" || mm._yukinoSlowFadePatched) return;
       const origCreate = mm.createMotion.bind(mm);
       mm.createMotion = function (motionData, group, definition) {
+        const meta = motionData && motionData.Meta;
+        // 运行时 bug：核心 motion 从不应用 Meta.Loop，所有动作都按非循环处理。
+        // 姿势 idle 动作(Loop:true)播完会触发 idle 返回把同一动作再播一遍
+        // (即"被复位多执行一次")。这里把 Loop 写回、关掉循环衔接的重复淡入，
+        // 并把每条曲线的首点值对齐末点值，消除循环边界的短段复位跳变。
+        if (meta && meta.Loop && Array.isArray(motionData.Curves)) {
+          for (const c of motionData.Curves) {
+            const seg = c && c.Segments;
+            if (seg && seg.length >= 2) seg[1] = seg[seg.length - 1];
+          }
+        }
         const motion = origCreate(motionData, group, definition);
         if (!motion) return motion;
         try {
+          if (meta && typeof motion.setIsLoop === "function") {
+            motion.setIsLoop(!!meta.Loop);
+            motion.setIsLoopFadeIn(false);
+          }
           if (group === mm.groups.idle) {
-            motion.setFadeInTime(2.8);   // 动作做完回 Idle 时慢慢归位
-            motion.setFadeOutTime(2.8);
+            motion.setFadeInTime(1.5);   // 姿势淡入与手臂过渡时长对齐，一次平滑到位
+            motion.setFadeOutTime(1.5);
           } else {
             motion.setFadeInTime(1.4);   // 动作切入也放慢
             motion.setFadeOutTime(1.4);
@@ -288,6 +305,9 @@
       };
       console.info("[yukino2d] 手臂过渡 ->", group,
                   "(", state.poseTransition.duration.toFixed(2), "s ease-out)");
+      // 立即播新姿势动作：动作淡入与手臂过渡同时进行。之前等 ease 到位才播，
+      // 动作异步加载未完成时手臂会被旧姿势拉回，造成"到位后初始位置不一样"的重叠。
+      setPose(group, true);
       return true;
     }
 
@@ -306,12 +326,11 @@
       }
       writeArmParams(vals);
 
-      // 过渡到位后再启动目标姿势的预设 motion；继续保持目标手臂值一小段
-      // 时间，等新 motion 的淡入接管，避免跳变。
+      // 保持目标手臂值一小段时间，等新 motion 的淡入接管，避免跳变。
+      // （motion 已在 startPoseTransition 时启动，这里只负责结束过渡）
       if (u >= 1 && !tr.started) {
         tr.started = true;
         tr.holdUntil = t + 0.35;
-        setPose(tr.group, true);
       }
       if (tr.started && t >= tr.holdUntil) {
         state.poseTransition = null;
@@ -540,25 +559,31 @@
       const talk = state.talk || 0;
       // 手臂姿势过渡：先快后慢旋转到目标手臂值，完成后再启动预设 motion
       const transitioning = updatePoseTransition(t);
+      // 手臂自然动作权重：过渡期间淡出、结束后平滑淡入（时间常数 ~0.2s），
+      // 避免到位瞬间噪声从 0 突然恢复造成手臂小抖。
+      const armDt = state._lastArmT ? Math.min(0.1, t - state._lastArmT) : 0.016;
+      state._lastArmT = t;
+      state.armNoiseEnv += ((transitioning ? 0 : 1) - state.armNoiseEnv) * Math.min(1, armDt * 5);
       core.setParameterValueById("PARAM_MOUTH_OPEN_Y", mouthParam(state.mouth));
       // 眼睛转动（说话时更明显）：眼珠切片 PARTS_01_EYE_BALL_001 由
       // PARAM_EYE_BALL_X/Y 驱动，叠加随机扫视
       const gaze = updateEyeGaze(t, talk);
       core.addParameterValueById("PARAM_EYE_BALL_X", gaze.x);
       core.addParameterValueById("PARAM_EYE_BALL_Y", gaze.y);
-      // 手/手臂自然动作（过渡期间暂停噪声，让过渡曲线干净）
-      if (!transitioning) {
-        const arm = updateArmMotion(t, talk);
-        core.addParameterValueById("PARAM_SHOULDER_R", arm.shoulderR);
-        core.addParameterValueById("PARAM_UPPERARM_R", arm.upperArmR);
-        core.addParameterValueById("PARAM_FOREARM_R", arm.forearmR);
-        core.addParameterValueById("PARAM_FOREARM_AP_R", arm.forearmApR);
-        core.addParameterValueById("PARAM_WRIST_R", arm.wristR);
-        core.addParameterValueById("PARAM_SHOULDER_L", arm.shoulderL);
-        core.addParameterValueById("PARAM_UPPERARM_L", arm.upperArmL);
-        core.addParameterValueById("PARAM_FOREARM_L", arm.forearmL);
-        core.addParameterValueById("PARAM_FOREARM_AP_L", arm.forearmApL);
-        core.addParameterValueById("PARAM_WRIST_L", arm.wristL);
+      // 手/手臂自然动作（过渡期间噪声权重趋 0，让过渡曲线干净）
+      const arm = updateArmMotion(t, talk);
+      const aw = state.armNoiseEnv;
+      if (aw > 0.001) {
+        core.addParameterValueById("PARAM_SHOULDER_R", arm.shoulderR * aw);
+        core.addParameterValueById("PARAM_UPPERARM_R", arm.upperArmR * aw);
+        core.addParameterValueById("PARAM_FOREARM_R", arm.forearmR * aw);
+        core.addParameterValueById("PARAM_FOREARM_AP_R", arm.forearmApR * aw);
+        core.addParameterValueById("PARAM_WRIST_R", arm.wristR * aw);
+        core.addParameterValueById("PARAM_SHOULDER_L", arm.shoulderL * aw);
+        core.addParameterValueById("PARAM_UPPERARM_L", arm.upperArmL * aw);
+        core.addParameterValueById("PARAM_FOREARM_L", arm.forearmL * aw);
+        core.addParameterValueById("PARAM_FOREARM_AP_L", arm.forearmApL * aw);
+        core.addParameterValueById("PARAM_WRIST_L", arm.wristL * aw);
       }
       // 自动轮换 Idle 姿势：说话/动作/过渡期间不换，避免打断表演
       const nowMs = performance.now();

@@ -4,6 +4,10 @@ node_modules/
 Thumbs.db
 .gstack/
 
+# AI 协作者本地配置（不入库）
+CLAUDE.md
+.claude/
+
 # yukino/ 子项目的敏感/运行数据（yukino/.gitignore 已覆盖，此处兜底防误提交）
 yukino/.env.local
 yukino/.env

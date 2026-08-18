@@ -1,12 +1,17 @@
 # yukino-dsh · 把雪之下雪乃接入 DSH
 
-把「雪之下雪乃」（VoxEMW 数字人语音助手）接进 DSH（DeepSeek Harness）web 的插件仓库。
-雪乃有 Live2D 形象、日语音色、人设、记忆、对话历史五位一体；既可以嵌入 DSH 右侧做陪伴面板，
-也能独立打开全屏语音对话页。
+把「雪之下雪乃」——一个会**主动开口的 AI 语音助手**——接进 DSH（DeepSeek Harness）web 的插件仓库。
+雪乃有 Live2D 形象、日语音色、人设、记忆与对话历史五位一体；既能主动发起对话（语音 / 打字皆可），
+也能**监听 DSH 任务完成**：任务一跑完，自动总结并语音播报给你听。既可嵌入 DSH 右侧做陪伴面板，
+也可独立打开全屏语音对话页。
 
 - **插件本体**（`lib/`）：注入 DSH web，新增 `/yukino` 路由 + 右侧基础面板，DSH 任务完成时把总结交给雪乃点评。
 - **雪乃服务**（`yukino/` 子目录）：完整数字人语音助手源码与素材（Python orchestrator + Live2D 前端 + 配置 + 人设 + 技能）。
 - **当前版本**：0.1.0 · MIT License。
+
+<p align="center">
+  <img src="yukino/yukinoDsh.png" alt="yukinoDsh 效果图" width="80%">
+</p>
 
 ## 功能
 

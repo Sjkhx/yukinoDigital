@@ -13,14 +13,21 @@ https://www.ai-hobbyist.com/forum.php?mod=viewthread&tid=159980&page=1&mobile=no
 
 ## 放置位置
 
-下载解压后，按原来的目录结构放回仓库根目录即可，例如：
+> **重要**：推理服务 `scripts/gptsovits_v2proplus_server.py` 实际读取的路径是
+> `$GPT_SOVITS_ROOT/GPT_SoVITS/pretrained_models/yukino/`（`GPT_SOVITS_ROOT` 默认 `~/GPT-SoVITS`），
+> **不是**下载包的 `GPTV2proplus/` 目录。下载解压后需按下面步骤放置，服务才能加载到权重。
+
+下载解压后得到 `GPTV2proplus/雪之下雪乃/` 目录（含 `yukino-e15.ckpt`、`yukino_e8_s1744.pth`、`reference_audios/`）。
+
+**WSL2 推理环境（默认）**，把权重放到 GPT-SoVITS 安装目录下：
 
 ```text
-GPTV2proplus/
-  └── 雪之下雪乃/
-      ├── yukino-e15.ckpt
-      ├── yukino_e8_s1744.pth
-      └── reference_audios/...
+~/GPT-SoVITS/GPT_SoVITS/pretrained_models/yukino/
+  ├── yukino-e15.ckpt
+  ├── yukino_e8_s1744.pth
+  └── reference_audios/日语/emotions/   # 3 条情绪参考音频
 ```
 
-如果你使用的是 WSL 侧推理环境，请把权重放到 WSL 仓库对应路径（如 `~/VoxEMW/GPTV2proplus/`）或按 `scripts/start_assistant_wsl.sh` 里配置的路径放置。
+即把下载包里的两个权重文件拷到 `pretrained_models/yukino/`，`reference_audios/` 一并拷入。
+
+若 GPT-SoVITS 装在别处，用环境变量 `GPT_SOVITS_ROOT` 覆盖，对应路径变为 `$GPT_SOVITS_ROOT/GPT_SoVITS/pretrained_models/yukino/`。

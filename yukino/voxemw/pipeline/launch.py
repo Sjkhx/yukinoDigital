@@ -18,6 +18,8 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+import logging
 import os
 import sys
 from pathlib import Path
@@ -27,6 +29,8 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from voxemw.config import load_config, load_dotenv  # noqa: E402
 from voxemw.pipeline.args import render_s2s_argv, stt_setup_kwargs, tts_setup_kwargs  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG = "configs/assistant.yaml"
 
@@ -139,21 +143,33 @@ def _patch_bilingual_transcript() -> None:
     response.output_audio_transcript 事件只带日语（聊天框正文），译文以自定义
     vox.translation.delta 事件流式下发（前端在气泡内显示翻译行）。
 
+    可选的第三段「【演出】」（Live2D 动作编排指令，AI 按人设格式输出）：
+    不进语音、不进译文，轮结束时（finish_response）解析为 vox.choreo 事件
+    下发，且排在 response.done 之前——前端先收到编排再收 done，跳过默认
+    情绪演出，用 AI 自带的编排。
+
     与 TTS 侧的拆分（tts_voxcpm.BilingualFlow 只合成日语段）共用同一切分器，
     流式标记可能被 chunk 切开，切分器按安全前缀处理。每轮 response 结束
     （finish_response，含打断）重置流状态，防跨轮错乱。LLM 未按格式输出时
     无【日语】标记 → 切分器保持 none 模式、增量恒空 → 行为回退为原样透传。"""
+    import re
+
     from pydantic import BaseModel
 
     from speech_to_speech.api.openai_realtime.handlers.response import ResponseHandler
     from speech_to_speech.pipeline.events import AssistantTextEvent
 
+    from voxemw.ai_log import parse_perf_directive, write_ai_log
     from voxemw.pipeline.tts_voxcpm import BilingualFlow
 
     # 自定义 ServerEvent：router 用 event.model_dump() 序列化，任意 pydantic 模型可直接下发
     class TranslationDeltaEvent(BaseModel):
         type: str = "vox.translation.delta"
         delta: str
+
+    class ChoreoEvent(BaseModel):
+        type: str = "vox.choreo"
+        steps: list[dict]
 
     orig_assistant_text = ResponseHandler.on_assistant_text
     orig_finish = ResponseHandler.finish_response
@@ -162,10 +178,15 @@ def _patch_bilingual_transcript() -> None:
         events = orig_assistant_text(self, conn_id, event, **kwargs)
         if not events or not isinstance(event, AssistantTextEvent) or not event.text:
             return events
+        # 累积本轮 LLM 原文（含【演出】段），finish_response 时写调试日志
+        raw_list = getattr(self, "_vox_ai_raw", None)
+        if raw_list is None:
+            self._vox_ai_raw = raw_list = []
+        raw_list.append(event.text)
         flow = getattr(self, "_vox_bilingual_flow", None)
         if flow is None:
             flow = self._vox_bilingual_flow = BilingualFlow()
-        ja_d, zh_d = flow.feed(event.text)
+        ja_d, zh_d, _ = flow.feed(event.text)  # 演出增量已在 flow.perf_buf 累积
         new_events = []
         for ev in events:
             if getattr(ev, "type", "") == "response.output_audio_transcript.done":
@@ -180,12 +201,14 @@ def _patch_bilingual_transcript() -> None:
         # send loop 崩溃、后续音频事件全部发不出去（2026-08-10 事故）
         flow = getattr(self, "_vox_bilingual_flow", None)
         extra: list = []
+        choreo: list = []
         if flow is not None:
             if flow.mode == "none" and flow.buf.strip():
                 # 显示侧兜底：LLM 整轮未按【日语】/【译文】格式输出（如直接回中文）
                 # 时，TTS 侧会整段朗读（EndOfResponse 兜底），这里补发完整文本
                 # 作为转写，与朗读一致——否则有声音但聊天框空白
                 from openai.types.realtime import ResponseAudioTranscriptDoneEvent
+                tail = flow.strip_perf(flow.buf)  # 【演出】指令不显示
                 extra = [ResponseAudioTranscriptDoneEvent(
                     type="response.output_audio_transcript.done",
                     event_id=self._next_event_id(),
@@ -193,10 +216,32 @@ def _patch_bilingual_transcript() -> None:
                     item_id="",
                     output_index=0,
                     response_id="",
-                    transcript=flow.buf,
+                    transcript=tail,
                 )]
+            # 演出编排：解析【演出】段 → vox.choreo（排在 response.done 之前）
+            if flow.perf_buf.strip():
+                steps = parse_perf_directive(flow.perf_buf)
+                if steps:
+                    choreo = [ChoreoEvent(steps=steps)]
+                    logger.info("vox.choreo 下发: %s", steps)
+            # 每次 AI 调用写独立调试日志。同步写 VOXEMW_AI_LOG_DIR（可能指到
+            # /mnt/d NTFS 慢挂载）会卡住 asyncio 事件循环、拖断 realtime ws，
+            # 丢线程池执行（fire-and-forget，不阻塞 finish_response 返回）。
+            raw = "".join(getattr(self, "_vox_ai_raw", None) or [])
+            if raw.strip():
+                full = BilingualFlow()  # 非流式整段切分：一次还原 日语/译文/演出
+                ja_full, zh_full, perf_full = full.feed(raw)
+                steps_full = parse_perf_directive(perf_full) if perf_full.strip() else []
+                try:
+                    asyncio.get_running_loop().run_in_executor(
+                        None, write_ai_log, "pipeline", raw, ja_full, zh_full,
+                        perf_full, steps_full, conn_id,
+                    )
+                except RuntimeError:
+                    write_ai_log("pipeline", raw, ja_full, zh_full, perf_full, steps_full, conn_id)
+            self._vox_ai_raw = []
             flow.reset()  # 轮结束（含打断）重置切分状态，防跨轮错乱
-        return orig_finish(self, conn_id, status, reason, **kwargs) + extra
+        return choreo + orig_finish(self, conn_id, status, reason, **kwargs) + extra
 
     ResponseHandler.on_assistant_text = on_assistant_text
     ResponseHandler.finish_response = finish_response

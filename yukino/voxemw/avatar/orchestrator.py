@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import datetime
 import json
 
 import numpy as np
@@ -55,6 +56,8 @@ import websockets
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+
+from voxemw.ai_log import parse_perf_directive, split_perf_section, write_ai_log  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -165,8 +168,14 @@ EMOTION_TO_GROUP = {
 EMOTION_SIDECAR_PATH = os.path.join(tempfile.gettempdir(), "voxemw_stt_emotion")
 
 
-def yukino_task_done_reply(project: str, title: str, summary: str, config: dict) -> tuple[str, str]:
-    """把 DSH 任务完成信息交给雪乃人设，生成【日语】+【译文】两段回复。"""
+def yukino_task_done_reply(
+    project: str, title: str, summary: str, config: dict, conn_id: str = ""
+) -> tuple[str, str, str, list]:
+    """把 DSH 任务完成信息交给雪乃人设，生成【日语】+【译文】+可选【演出】。
+
+    返回 (ja, zh, perf, steps)：zh 已剥掉【演出】段；perf 为原始指令；
+    steps 为解析后的编排步骤（空=无演出）。每次调用写一份 AI 调试日志。
+    """
     import re
 
     try:
@@ -201,6 +210,12 @@ def yukino_task_done_reply(project: str, title: str, summary: str, config: dict)
         ],
         "stream": False,
     }
+    # 与 pipeline 的 LLM 一致：配了 reasoning_effort 就带上（DeepSeek 只认
+    # high/low/medium/max/xhigh）。不带的话这条裸调用走 DeepSeek 默认思考行为，
+    # 和对话管线行为不一致（2026-08-19 排查演出编排丢失时发现）。
+    reasoning_effort = str(llm.get("reasoning_effort") or "").strip()
+    if reasoning_effort:
+        body["reasoning_effort"] = reasoning_effort
     req = urllib.request.Request(
         f"{base_url.rstrip('/')}/chat/completions",
         data=json.dumps(body).encode("utf-8"),
@@ -228,7 +243,11 @@ def yukino_task_done_reply(project: str, title: str, summary: str, config: dict)
             ja = m.group(1).strip()
         else:
             ja = content
-    return ja, zh
+    # 【演出】指令段：从译文后拆出（不显示、不朗读），解析成编排步骤 + 写调试日志
+    zh, perf = split_perf_section(zh)
+    steps = parse_perf_directive(perf) if perf else []
+    write_ai_log("taskdone", content, ja, zh, perf, steps, conn_id)
+    return ja, zh, perf, steps
 
 
 def synthesize_task_done_audio(text: str, server_url: str) -> bytes | None:
@@ -987,16 +1006,17 @@ def create_app(config: dict):
         if not raw_text:
             return web.json_response({"ok": False, "error": "缺少 text/project"}, status=400)
 
-        # 交给雪乃人设：生成【日语】+【译文】两段，和原项目 agent 格式一致
-        ja_text, zh_text = await asyncio.to_thread(
-            yukino_task_done_reply, project, title, summary, config
+        # 交给雪乃人设：生成【日语】+【译文】+可选【演出】，和原项目 agent 格式一致
+        session = current_session.get("session")
+        conn_id = str(getattr(session, "session_id", "") or "")
+        ja_text, zh_text, _perf, steps = await asyncio.to_thread(
+            yukino_task_done_reply, project, title, summary, config, conn_id
         )
         if not ja_text:
             ja_text = raw_text
             zh_text = ""
 
         tts_url = str((config.get("tts") or {}).get("server_url", "http://127.0.0.1:8899"))
-        session = current_session.get("session")
 
         # 音频总是合成：有活跃会话就实时推送，没有就存 pending，等下次打开页面补播。
         # （a64d1fc 让 task-done 在无会话时也写历史，但音频只推活跃 ws——页面没开时
@@ -1012,6 +1032,16 @@ def create_app(config: dict):
                 }))
             except Exception as e:
                 logger.info("推送 task-done 到浏览器失败（忽略）: %s", e)
+
+            # 演出编排：LLM 带的【演出】步骤下发给前端（Live2D 按序表演）
+            if steps:
+                try:
+                    await session.browser.send_str(json.dumps({
+                        "type": "vox.choreo",
+                        "steps": steps,
+                    }))
+                except Exception as e:
+                    logger.info("task-done 演出下发失败（忽略）: %s", e)
 
             # 用真实雪乃音色合成日语正文并推送音频（前端只负责播放，口型照常驱动）
             if pcm:
@@ -1067,7 +1097,19 @@ def create_app(config: dict):
         old = current_session["session"]
         if old is not None:
             logger.info("新连接到达，顶掉旧会话（释放管线槽位）")
+            # 旧浏览器 ws 显式以 4001 关闭：前端据此识别"被新页面接管"，不做 3s
+            # 重连（否则两页面互相顶掉 → 无限"断开/连上"循环，2026-08-19 实测）。
+            # 被接管页等页面重新可见/聚焦才恢复连接，可见页胜出并稳定持有会话。
+            if old.browser is not None:
+                try:
+                    await old.browser.close(code=4001, message=b"superseded")
+                except Exception:
+                    pass
             await old.close()
+            # 给管线一点时间释放唯一槽位（旧会话 s2s 断开是异步的）：
+            # 立即建新会话 → s2s connect 撞上未释放的槽 → 1008 → 浏览器 3s 重连
+            # → 再次顶掉 → 无限"断开/连上"循环（2026-08-19 实测）
+            await asyncio.sleep(0.3)
         session = Session(ws, s2s_url, avatar_url, personas, default_persona,
                           filler_enabled=filler_enabled,
                           avatar_backend=avatar_backend, memory_store=memory_store,

@@ -45,67 +45,116 @@ DEFAULT_VOICE = "default"  # ref_audio/ref_text 启动参数对应的音色名�
 
 
 class BilingualFlow:
-    """「【日语】…【译文】…」LLM 输出格式的流式切分器。
+    """「【日语】…【译文】…【演出】…」LLM 输出格式的流式切分器。
 
     同一逻辑供两处使用：
     - TTS 侧（tts_voxcpm）：feed() 的日语增量送合成、译文增量丢弃（只念日语）
     - 显示侧（launch.py patch on_assistant_text）：日语增量进 transcript、
       译文增量发 vox.translation.delta（聊天框显示翻译）
 
+    【演出】是可选的第三段（Live2D 动作编排指令，由 AI 按格式输出）：
+    必须在【译文】之后，内容不进语音、不进译文，显示侧累积到 perf_buf，
+    轮结束时解析为步骤列表下发前端。TTS 侧对 perf 内容完全忽略。
+
     标记可能被 LLM 流式输出从中间切开（如 "【日" 后断 chunk）：feed 保留
     尾部安全前缀等下一个 chunk 补全，不产生错误增量。模式：
-      none —— 尚未见到【日语】：增量恒空、缓冲全保留（标记前内容丢弃，
+      none —— 尚未见到标记：增量恒空、缓冲全保留（标记前内容丢弃，
               但保留完整缓冲供 EndOfResponse 兜底——LLM 整轮未按格式输出
               时把全文按原行为朗读）
       ja   —— 在【日语】段内（增量输出日语）
       zh   —— 已进入【译文】段（增量输出译文）
+      perf —— 已进入【演出】段（增量进 perf_buf，不朗读不显示）
     """
 
     JA = "【日语】"
     ZH = "【译文】"
+    PERF = "【演出】"
 
     def __init__(self):
         self.buf = ""
         self.mode = "none"
+        self.perf_buf = ""
 
-    def feed(self, text: str) -> tuple[str, str]:
-        """喂入一段流式文本，返回 (日语增量, 译文增量)。"""
+    def feed(self, text: str) -> tuple[str, str, str]:
+        """喂入一段流式文本，返回 (日语增量, 译文增量, 演出增量)。"""
         # LLM 标签漂移容错：简体「【日本語】」等价于「【日语】」
         #（不识别会把整段带标签兜底合成 → 长段崩坏/标签进语音，2026-08-12）
         text = text.replace("【日本語】", "【日语】")
         self.buf += text
         ja_d = ""
         zh_d = ""
+        perf_d = ""
         while True:
             s = self.buf
             if self.mode == "none":
-                if self.JA in s:
-                    # 标记前内容（LLM 多余输出）丢弃，从标记后开始
-                    self.buf = s[s.index(self.JA) + len(self.JA):]
+                ja_at = s.find(self.JA)
+                perf_at = s.find(self.PERF)
+                # 取最早出现的标记（【日语】优先，容错标签顺序漂移）
+                if ja_at >= 0 and (perf_at < 0 or ja_at <= perf_at):
+                    self.buf = s[ja_at + len(self.JA):]
                     self.mode = "ja"
                     continue  # 立即处理标记后的内容
+                if perf_at >= 0:
+                    self.buf = s[perf_at + len(self.PERF):]
+                    self.mode = "perf"
+                    continue
                 break  # 无标记：整段保留，不产出增量（EndOfResponse 兜底用）
             if self.mode == "ja":
-                if self.ZH in s:
-                    j = s.index(self.ZH)
-                    ja_d += s[:j]
-                    self.buf = s[j + len(self.ZH):]
-                    self.mode = "zh"
+                zh_at = s.find(self.ZH)
+                perf_at = s.find(self.PERF)
+                if zh_at >= 0 or perf_at >= 0:
+                    if perf_at >= 0 and (zh_at < 0 or perf_at < zh_at):
+                        # 【演出】跑到【译文】前（LLM 顺序漂移）：日语止于演出标记
+                        ja_d += s[:perf_at]
+                        self.buf = s[perf_at + len(self.PERF):]
+                        self.mode = "perf"
+                    else:
+                        ja_d += s[:zh_at]
+                        self.buf = s[zh_at + len(self.ZH):]
+                        self.mode = "zh"
                     continue
-                safe = len(s) - (len(self.ZH) - 1)
+                safe = len(s) - (min(len(self.ZH), len(self.PERF)) - 1)
                 if safe > 0:
                     ja_d += s[:safe]
                     self.buf = s[safe:]
                 break
-            # zh：译文是尾段，后续不再有标记，直接全量输出
-            zh_d += s
+            if self.mode == "zh":
+                perf_at = s.find(self.PERF)
+                if perf_at >= 0:
+                    zh_d += s[:perf_at]
+                    self.buf = s[perf_at + len(self.PERF):]
+                    self.mode = "perf"
+                    continue
+                # 仅当尾部看起来是【演出】标记前缀时才暂留（防标记被切开），
+                # 否则译文立即输出——zh 是尾段，常驻延迟会拖慢聊天框
+                hold = 0
+                for h in range(min(len(self.PERF) - 1, len(s)), 0, -1):
+                    if s[-h:] == self.PERF[:h]:
+                        hold = h
+                        break
+                safe = len(s) - hold
+                if safe > 0:
+                    zh_d += s[:safe]
+                    self.buf = s[safe:]
+                break
+            # perf：尾段（编排指令），后续不再有标记，直接全量进 perf_buf
+            perf_d += s
             self.buf = ""
             break
-        return ja_d, zh_d
+        if perf_d:
+            self.perf_buf += perf_d
+        return ja_d, zh_d, perf_d
 
     def reset(self) -> None:
         self.buf = ""
         self.mode = "none"
+        self.perf_buf = ""
+
+    @staticmethod
+    def strip_perf(text: str) -> str:
+        """剥掉【演出】标记及其后的编排指令（兜底朗读/显示时用）。"""
+        idx = text.find(BilingualFlow.PERF)
+        return text[:idx].rstrip() if idx >= 0 else text
 
 
 class _AtempoStretcher:
@@ -468,6 +517,7 @@ class VoxCPMTTSHandler(BaseHandler[TTSIn, TTSOut]):
             if self._bilingual is not None:
                 if self._bilingual.mode == "none":
                     tail = self._bilingual.buf.strip()
+                    tail = self._bilingual.strip_perf(tail)  # 【演出】段不朗读
                     if tail:
                         logger.warning("双语格式缺失（无【日语】标记），整段回退合成")
                         gen = self.cancel_scope.generation if self.cancel_scope else None
@@ -498,9 +548,9 @@ class VoxCPMTTSHandler(BaseHandler[TTSIn, TTSOut]):
 
         console.print(f"[green]ASSISTANT: {text}")
 
-        # 双语模式：流式切分「【日语】」段朗读，「【译文】」段只显示不朗读
+        # 双语模式：流式切分「【日语】」段朗读，「【译文】/【演出】」段不朗读
         if self._bilingual is not None:
-            ja_d, _ = self._bilingual.feed(text)
+            ja_d, _, _ = self._bilingual.feed(text)
             logger.info("TTS bilingual: in=%r ja_d=%r mode=%s buf=%r",
                         text[:40], ja_d[:40], self._bilingual.mode, self._bilingual.buf[:20])
             if not ja_d.strip():

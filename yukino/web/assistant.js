@@ -45,6 +45,8 @@ const els = {
   historyRefresh: document.getElementById("history-refresh"),
   historyTitle: document.getElementById("history-title"),
   historyNew: document.getElementById("history-new"),
+  perfToggle: document.getElementById("perf-toggle"),
+  perfDrawer: document.getElementById("performance-drawer"),
 };
 
 let ws = null;
@@ -59,6 +61,8 @@ let assistantJaText = "";   // 本轮助手日语全文（live2d 情绪 agent �
 let mode2d = false;
 let yukino2d = null;        // { setMouth, isReady, destroy }，来自 /static/yukino2d.js
 let mouthTracker = null;    // OpennessTracker（viseme 同款 RMS→开合度）
+let aiChoreoPending = false;  // 本轮 LLM 自带【演出】编排（vox.choreo 已收），跳过默认情绪演出
+let aiChoreoResetTimer = null;  // task-done 编排没有后续 response.done，定时自动清除
 // ASR final 后的收音门控：final → 暂停送麦克风音频，等本轮 TTS 播放排空再恢复。
 // 效果：回答播放期间不再接受用户插话音频（也不会误触发新 ASR/打断）。
 let micInputPaused = false;   // true = 暂停向 s2s 发送 input_audio_buffer.append
@@ -70,10 +74,12 @@ if (SOLO_MODE) document.body.classList.add("solo");
 const COMPACT_MODE = new URLSearchParams(location.search).has("compact");
 if (COMPACT_MODE) document.body.classList.add("compact");
 
-// Live2D Cubism 4 模型：默认制服（yukino_seihuku），?outfit=shihuku 切换私服
-const LIVE2D_MODEL_URL = new URLSearchParams(location.search).get("outfit") === "shihuku"
+// Live2D Cubism 4 模型：默认制服（yukino_seihuku），?outfit=shihuku 切换私服。
+// ?v= 缓存版本号：模型文件改名后浏览器强制拉新 model3.json（旧缓存会 404）
+const MODEL_VERSION = "20260819e";
+let LIVE2D_MODEL_URL = (new URLSearchParams(location.search).get("outfit") === "shihuku"
   ? "/static/live2d/models/yukino/yukino_shihuku.model3.json"
-  : "/static/live2d/models/yukino/yukino_seihuku.model3.json";
+  : "/static/live2d/models/yukino/yukino_seihuku.model3.json") + "?v=" + MODEL_VERSION;
 
 
 // ---------------------------------------------------------------------------
@@ -392,6 +398,7 @@ function init2DLive() {
     return;  // 兜底走静态肖像（showStill）
   }
   start2DLoop();
+  showPerfUI();
 }
 
 function start2DLoop() {
@@ -407,7 +414,7 @@ function start2DLoop() {
       for (let i = 0; i < rmsData.length; i++) s += rmsData[i] * rmsData[i];
       rms = Math.sqrt(s / rmsData.length);
     }
-    yukino2d.setMouth(mouthTracker.step(rms));
+    if (yukino2d) yukino2d.setMouth(mouthTracker.step(rms));  // 服装切换重建期间短暂无引擎
     if (avatarState === "speaking" && p && p.nextStartTime <= p.ctx.currentTime) {
       setAvatarState("idle");  // 说话排空→待机角标（复用原逻辑）
     }
@@ -447,21 +454,224 @@ function detectYukinoEmotion(text) {
   return { emotion: "calm", expression: 0, motion: null };
 }
 
+// 情绪 → 编排序列：动作时长取作者 motion 预置（Meta.Duration），衔接过渡由
+// 引擎交叉淡入淡出保留。index 与 model3.json Action 顺序一致：
+// 15 汗颜/16 泪眼/17 阴沉/18 疑问/19 生气/20 挑眉（头部特效）；6=1B 闭眼低头 11=1C 闭眼低头。
+const EMOTION_CHOREO = {
+  angry:    [{ type: "expression", value: 9 }, { type: "motion", value: 19 }],
+  surprise: [{ type: "expression", value: 8 }, { type: "pause", ms: 900 }, { type: "expression", value: 0 }],
+  confused: [{ type: "expression", value: 10 }, { type: "motion", value: 18 }],
+  sad:      [{ type: "expression", value: 0 }, { type: "motion", value: 16 }],
+  happy:    [{ type: "expression", value: 1 }, { type: "motion", value: 6 }, { type: "expression", value: 1 }],
+  tired:    [{ type: "expression", value: 4 }, { type: "motion", value: 15 }],
+  shy:      [{ type: "expression", value: 11 }, { type: "motion", value: 11 }],
+  calm:     [{ type: "expression", value: 0 }],
+};
+// 抽屉「试演」用的示例编排（验证流程与衔接过渡）
+const SAMPLE_CHOREO = [
+  { type: "expression", value: 1 },
+  { type: "motion", value: 6 },
+  { type: "expression", value: 10 },
+  { type: "motion", value: 18 },
+  { type: "expression", value: 0 },
+  { type: "pose", value: "pose2" },
+];
+
 function runLive2dEmotionAgent(text) {
   if (!yukino2d || !yukino2d.isReady()) return;
   const t = (text || "").trim();
   if (!t) return;
   const choice = detectYukinoEmotion(t);
   if (choice.expression !== undefined && choice.expression !== null) {
+    updateExpressionHighlight(choice.expression);  // 演出抽屉表情高亮同步
+  }
+  // 动作流程演出：按情绪播一小段编排（时长取动作预置，衔接过渡保留）
+  const seq = EMOTION_CHOREO[choice.emotion];
+  if (seq) {
+    yukino2d.playChoreography(seq);
+  } else if (choice.expression !== undefined && choice.expression !== null) {
     yukino2d.setExpression(choice.expression);
   }
-  if (choice.motion) {
+  if (choice.motion && !seq) {
     yukino2d.playMotion(choice.motion, 3);
   }
   console.info(
-    "[live2d-agent] 情绪: %s | 表情: %s | 动作: %s | 文本: %s",
-    choice.emotion, choice.expression, choice.motion || "-", t.slice(0, 24)
+    "[live2d-agent] 情绪: %s | 编排: %s | 文本: %s",
+    choice.emotion, seq ? seq.length + " 步" : "-", t.slice(0, 24)
   );
+}
+
+// ---------------------------------------------------------------------------
+// 演出控制（作者 demo 同款交互）：目光跟随 / 模拟说话 / 服装 / 表情 / 动作。
+// 只在 2dlive 引擎就绪后构建；图标按钮 → 抽屉。动作/表情 index 与
+// model3.json 的 Action / Expressions 顺序一致。
+// ---------------------------------------------------------------------------
+const EXPRESSION_LABELS = [
+  "平静", "微笑", "认真", "冷淡", "无奈", "汗颜", "审视", "侧目",
+  "惊讶", "不悦", "困扰", "害羞", "脸红", "轻笑",
+];
+const ACTION_LABELS = [
+  "姿态A·撩头发", "1A 闭眼低头", "2A 闭眼摇头", "3A 向右摇头", "4A 闭眼叹气",
+  "姿态B·搭手", "1B 闭眼低头", "2B 闭眼摇头", "3B 向右摇头", "4B 闭眼叹气",
+  "姿态C·叉腰思考", "1C 闭眼低头", "2C 闭眼摇头", "3C 向右摇头", "4C 闭眼叹气",
+  "汗颜", "泪眼", "阴沉", "疑问", "生气", "挑眉",
+  "A→B", "A→C", "B→A", "B→C", "C→A", "C→B",
+];
+const POSE_ACTION_INDEXES = new Set([0, 5, 10]);  // 姿态A/B/C：点击同时切待机姿势
+let perfBuilt = false;
+let expressionChips = [];       // 表情 chip 引用（高亮用）
+let currentExpression = 0;      // 当前表情 index
+
+function updateExpressionHighlight(idx) {
+  currentExpression = idx;
+  expressionChips.forEach((chip, i) => chip.classList.toggle("active", i === idx));
+}
+
+function togglePerfDrawer() {
+  const open = els.perfDrawer.classList.toggle("open");
+  els.perfToggle.classList.toggle("active", open);
+}
+
+function buildPerformanceUI() {
+  if (perfBuilt || !yukino2d) return;
+  perfBuilt = true;
+  const drawer = els.perfDrawer;
+  drawer.innerHTML = "";
+
+  // 头：标题 + 关闭
+  const head = document.createElement("div");
+  head.className = "perf-head";
+  const title = document.createElement("span");
+  title.textContent = "演出控制";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "perf-close";
+  close.textContent = "✕";
+  close.addEventListener("click", togglePerfDrawer);
+  head.append(title, close);
+  drawer.appendChild(head);
+
+  // 行 1：目光跟随开关 + 模拟说话
+  const row1 = document.createElement("div");
+  row1.className = "perf-row";
+  const followBtn = document.createElement("button");
+  followBtn.type = "button";
+  followBtn.className = "perf-chip perf-chip-follow active";
+  followBtn.textContent = "目光跟随 · 开";
+  followBtn.addEventListener("click", () => {
+    const on = !followBtn.classList.contains("active");
+    if (yukino2d) yukino2d.setFollow(on);
+    followBtn.classList.toggle("active", on);
+    followBtn.textContent = on ? "目光跟随 · 开" : "目光跟随 · 关";
+  });
+  const talkBtn = document.createElement("button");
+  talkBtn.type = "button";
+  talkBtn.className = "perf-chip";
+  talkBtn.textContent = "模拟说话";
+  talkBtn.addEventListener("click", () => { if (yukino2d) yukino2d.talkDemo(4); });
+  const demoBtn = document.createElement("button");
+  demoBtn.type = "button";
+  demoBtn.className = "perf-chip";
+  demoBtn.textContent = "试演";
+  demoBtn.title = "播放示例编排（表情→动作→表情→动作→姿态，含衔接过渡）";
+  demoBtn.addEventListener("click", () => { if (yukino2d) yukino2d.playChoreography(SAMPLE_CHOREO); });
+  row1.append(followBtn, talkBtn, demoBtn);
+  drawer.appendChild(row1);
+
+  // 行 2：服装 制服/私服
+  const row2 = document.createElement("div");
+  row2.className = "perf-row";
+  ["seihuku", "shihuku"].forEach((o) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "perf-chip perf-chip-outfit" + (LIVE2D_MODEL_URL.includes(o) ? " active" : "");
+    b.textContent = o === "seihuku" ? "制服" : "私服";
+    b.addEventListener("click", () => switchOutfit(o, b));
+    row2.appendChild(b);
+  });
+  drawer.appendChild(row2);
+
+  // 表情（14）
+  const expLabel = document.createElement("div");
+  expLabel.className = "perf-section";
+  expLabel.textContent = "表情";
+  drawer.appendChild(expLabel);
+  const expGrid = document.createElement("div");
+  expGrid.className = "perf-grid";
+  expressionChips = EXPRESSION_LABELS.map((label, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "perf-chip";
+    b.textContent = label;
+    b.addEventListener("click", () => {
+      if (!yukino2d) return;
+      yukino2d.setExpression(i);
+      updateExpressionHighlight(i);
+    });
+    expGrid.appendChild(b);
+    return b;
+  });
+  drawer.appendChild(expGrid);
+
+  // 动作 / 姿态（27）
+  const actLabel = document.createElement("div");
+  actLabel.className = "perf-section";
+  actLabel.textContent = "动作 / 姿态";
+  drawer.appendChild(actLabel);
+  const actGrid = document.createElement("div");
+  actGrid.className = "perf-grid";
+  ACTION_LABELS.forEach((label, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "perf-chip" + (POSE_ACTION_INDEXES.has(i) ? " perf-chip-pose" : "");
+    b.textContent = label;
+    b.addEventListener("click", () => {
+      if (!yukino2d) return;
+      if (POSE_ACTION_INDEXES.has(i)) {
+        // 姿态A/B/C：切待机姿势 + 暂停自动轮换（用户手动选择优先）
+        const poseName = i === 0 ? "poseA" : i === 5 ? "poseB" : "poseC";
+        yukino2d.setPose(poseName);
+        yukino2d.setAutoPose(false);
+      } else {
+        yukino2d.playMotion(i, 3);
+      }
+    });
+    actGrid.appendChild(b);
+  });
+  drawer.appendChild(actGrid);
+
+  updateExpressionHighlight(0);
+}
+
+function showPerfUI() {
+  if (!mode2d || !els.perfToggle) return;
+  buildPerformanceUI();
+  els.perfToggle.classList.remove("hidden");
+  els.perfToggle.addEventListener("click", togglePerfDrawer);
+}
+
+// 服装切换：重建 Live2D 引擎（destroy → 同 canvas 重 init），保留目光跟随状态
+function switchOutfit(outfit, btn) {
+  if (!mode2d || !yukino2d) return;
+  const url = `/static/live2d/models/yukino/yukino_${outfit}.model3.json?v=${MODEL_VERSION}`;
+  if (url === LIVE2D_MODEL_URL) return;
+  const followOn = els.perfDrawer.querySelector(".perf-chip-follow")?.classList.contains("active") ?? true;
+  try { yukino2d.destroy(); } catch (e) { console.warn("[perf] destroy 失败:", e); }
+  yukino2d = null;
+  mouthTracker = window.createOpennessTracker();
+  try {
+    yukino2d = window.initYukino2D(els.canvas, { model: url });
+    window.yukino2dAgent = yukino2d;
+    LIVE2D_MODEL_URL = url;
+    yukino2d.setFollow(followOn);
+  } catch (e) {
+    console.error("[2dlive] 服装切换引擎重建失败:", e);
+    yukino2d = null;
+    return;
+  }
+  els.perfDrawer.querySelectorAll(".perf-chip-outfit").forEach((chip) => chip.classList.remove("active"));
+  btn.classList.add("active");
+  updateExpressionHighlight(0);
 }
 
 // 视频帧队列 + 音画对齐：帧按到达顺序编号（每个 response 从 0 起），
@@ -645,7 +855,14 @@ const realtimeHandlers = {
     if (avatarState === "thinking") setAvatarState("idle");  // 无音频回复的兜底
     resumeMicOnDrain = true;   // 回复已结束：等已排程音频播完即恢复收音
     maybeResumeMicInput();
-    runLive2dEmotionAgent(assistantJaText);
+    // LLM 自带【演出】编排时跳过默认情绪演出（vox.choreo 已先行播放）
+    if (aiChoreoPending) {
+      console.info("[live2d-agent] 本轮 AI 自带演出编排，跳过默认情绪演出");
+    } else {
+      runLive2dEmotionAgent(assistantJaText);
+    }
+    clearTimeout(aiChoreoResetTimer);
+    aiChoreoPending = false;
     assistantJaText = "";
   },
   error(event) {
@@ -697,6 +914,19 @@ function handleTextMessage(data) {
       if (event.action === "expression") yukino2d.setExpression(event.name);
       else if (event.action === "pose") yukino2d.setPose(event.name);
       else if (event.action === "motion") yukino2d.playMotion(event.name, event.priority);
+    }
+    return;
+  }
+  if (event.type === "vox.choreo" && Array.isArray(event.steps)) {
+    // LLM 自带的【演出】编排（管线或 task-done 解析后下发）：按顺序播 表情/动作/姿态/停顿。
+    // 管线对话里它排在 response.done 之前 → 本轮跳过默认情绪演出；
+    // task-done 编排没有后续 response.done，3s 后自动清除，避免误吞下一轮
+    if (yukino2d) {
+      yukino2d.playChoreography(event.steps);
+      aiChoreoPending = true;
+      clearTimeout(aiChoreoResetTimer);
+      aiChoreoResetTimer = setTimeout(() => { aiChoreoPending = false; }, 3000);
+      console.info("[vox.choreo] 编排 %d 步:", event.steps.length, event.steps);
     }
     return;
   }
@@ -911,6 +1141,42 @@ els.historyNew.onclick = newConversation;
 // 调试/入口：?history=1 打开页面时直接展开左侧历史栏
 if (new URLSearchParams(location.search).has("history")) openHistoryView();
 
+let reconnectTimer = null;
+let recoverHookBound = false;
+
+function isConnected() {
+  return !!ws && ws.readyState <= 1;  // CONNECTING/OPEN
+}
+
+// 恢复连接统一入口：后台标签页不持有连接（双页互顶 → 无限断开/连上循环，
+// 2026-08-19 实测），页面重新可见/聚焦时再恢复。
+function maybeConnect() {
+  if (document.hidden) { ensureRecoverHook(); return; }
+  if (isConnected()) return;
+  connect();
+}
+
+function scheduleReconnect(delayMs) {
+  clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(maybeConnect, delayMs);
+}
+
+// 只绑定一次 visibilitychange/focus：后台页隐藏时主动释放 ws（把唯一槽位
+// 让给可见页，避免互顶死循环），重新可见/聚焦时恢复连接。
+function ensureRecoverHook() {
+  if (recoverHookBound) return;
+  recoverHookBound = true;
+  const onVis = () => {
+    if (document.hidden) {
+      if (isConnected()) { try { ws.close(1000, "hidden"); } catch (e) {} }
+      return;
+    }
+    maybeConnect();
+  };
+  document.addEventListener("visibilitychange", onVis);
+  window.addEventListener("focus", maybeConnect);
+}
+
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws`);
@@ -920,12 +1186,21 @@ function connect() {
     els.micBtn.disabled = false;
     if (!mode2d) startFramePlayback();
   };
-  ws.onclose = () => {
-    setStatus("已断开", "warn");
+  ws.onclose = (ev) => {
     els.micBtn.disabled = true;
+    if (ev && ev.code === 4001) {
+      // 被其他页面接管（orchestrator 顶掉会话）：后台页退避，等重新可见再连；
+      // 可见页稍后重试接管（赢家往往是后台页，隐藏后会主动释放槽位）
+      setStatus("已被其他页面接管", "warn");
+      ensureRecoverHook();
+      if (document.hidden) return;
+      scheduleReconnect(2000);
+      return;
+    }
+    setStatus("已断开", "warn");
     // 简单重连：3s 重试。无条件重连——服务器重启/会话被顶掉时，
     // 未开麦状态（mic=null）也要恢复，否则页面永久「已断开」需手动刷新
-    setTimeout(() => connect(), 3000);
+    scheduleReconnect(3000);
   };
   ws.onerror = () => setStatus("连接错误", "warn");
   ws.onmessage = (msg) => {

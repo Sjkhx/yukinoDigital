@@ -403,3 +403,101 @@ body.compact .hint { display: none; }
 body.compact .panel-header { padding-bottom: 8px; }
 body.compact .persona-bar { margin-top: 6px; }
 body.compact .mic-btn { padding: 8px 24px; font-size: 14px; }
+
+/* ========== 演出控制（作者 demo 同款交互：目光跟随/模拟说话/服装/表情/动作） ========== */
+.perf-toggle {
+  position: fixed;
+  left: 12px;
+  bottom: 16px;
+  z-index: 30;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: rgba(255, 253, 254, 0.92);
+  color: var(--pink-dark);
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(180, 140, 165, 0.28);
+  align-items: center;
+  justify-content: center;
+  display: none;                 /* 默认隐藏，2dlive 就绪后 assistant.js 移除 hidden */
+  transition: transform .15s, box-shadow .2s;
+}
+.perf-toggle:not(.hidden) { display: flex; }
+.perf-toggle:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(247, 127, 168, .35); }
+.perf-toggle.active { box-shadow: 0 0 0 3px rgba(247, 127, 168, .25); }
+
+.performance-drawer {
+  position: fixed;
+  left: 12px;
+  bottom: 68px;
+  z-index: 30;
+  width: 250px;
+  max-height: min(62vh, 520px);
+  display: none;                 /* .open 时 flex 显示 */
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(180, 140, 165, 0.25);
+  padding: 10px;
+  gap: 6px;
+}
+.performance-drawer.open { display: flex; }
+.performance-drawer::-webkit-scrollbar { width: 6px; }
+.performance-drawer::-webkit-scrollbar-thumb { background: #e8dbe3; border-radius: 3px; }
+
+.perf-head { display: flex; align-items: center; justify-content: space-between; }
+.perf-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.perf-close {
+  border: none; background: transparent; color: var(--text-light);
+  font-size: 16px; line-height: 1; cursor: pointer; padding: 0 2px;
+}
+.perf-close:hover { color: var(--pink-dark); }
+
+.perf-section { font-size: 11px; color: var(--text-light); margin-top: 4px; letter-spacing: 1px; }
+.perf-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.perf-chip {
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  font-size: 11.5px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.perf-chip:hover { border-color: var(--pink); }
+.perf-chip.active {
+  background: linear-gradient(135deg, #ff9dbe, var(--pink));
+  border-color: var(--pink);
+  color: #fff;
+  font-weight: 600;
+}
+.perf-chip-follow.active {      /* 目光跟随开关的「开」态用绿色区分 */
+  background: linear-gradient(135deg, #7ed0a0, var(--live));
+  border-color: var(--live);
+  color: #fff;
+  font-weight: 600;
+}
+.perf-chip-pose { border-style: dashed; border-color: #d8c6d4; }  /* 姿态按钮（同时切待机姿势） */
+
+.perf-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* 紧凑面板模式（?compact=1）：舞台在上部 58%，抽屉与按钮浮在舞台内，不挤占对话 */
+body.compact .perf-toggle {
+  left: 8px; top: 8px; bottom: auto;
+  width: 34px; height: 34px; font-size: 15px;
+  background: rgba(255, 253, 254, 0.88);
+}
+body.compact .performance-drawer {
+  left: 8px; top: 50px; bottom: auto; right: 8px;
+  width: auto;
+  max-height: 46vh;
+  font-size: 11px;
+}

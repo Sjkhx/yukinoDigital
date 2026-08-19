@@ -68,105 +68,105 @@
     "Motions": {
       "Idle": [
         {
-          "File": "motion/yuk_pose1_idle.motion3.json",
+          "File": "motion/yuk_poseA_right_hand_tucking_hair.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         }
       ],
       "Pose1": [
         {
-          "File": "motion/yuk_pose1_idle.motion3.json",
+          "File": "motion/yuk_poseA_right_hand_tucking_hair.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         }
       ],
       "Pose2": [
         {
-          "File": "motion/yuk_pose2_idle.motion3.json",
+          "File": "motion/yuk_poseB_right_hand_overlapping_left_hand.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         }
       ],
       "Pose3": [
         {
-          "File": "motion/yuk_pose3_idle.motion3.json",
+          "File": "motion/yuk_poseC_arms_crossed_thinking.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         }
       ],
       "Action": [
         {
-          "File": "motion/yuk_pose1_idle.motion3.json",
+          "File": "motion/yuk_poseA_right_hand_tucking_hair.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_mot1a.motion3.json",
+          "File": "motion/yuk_1a_closed_eyes_bowing_head.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_mot2a.motion3.json",
+          "File": "motion/yuk_2a_closed_eyes_shaking_head.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_mot3a.motion3.json",
+          "File": "motion/yuk_3a_head_shaking_right.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_mot4a.motion3.json",
+          "File": "motion/yuk_4a_closed_eyes_sighing.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_pose2_idle.motion3.json",
+          "File": "motion/yuk_poseB_right_hand_overlapping_left_hand.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_mot1b.motion3.json",
+          "File": "motion/yuk_1b_closed_eyes_bowing_head.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_mot2b.motion3.json",
+          "File": "motion/yuk_2b_closed_eyes_shaking_head.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_mot3b.motion3.json",
+          "File": "motion/yuk_3b_head_shaking_right.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_mot4b.motion3.json",
+          "File": "motion/yuk_4b_closed_eyes_sighing.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_pose3_idle.motion3.json",
+          "File": "motion/yuk_poseC_arms_crossed_thinking.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_mot1c.motion3.json",
+          "File": "motion/yuk_1c_closed_eyes_bowing_head.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_mot2c.motion3.json",
+          "File": "motion/yuk_2c_closed_eyes_shaking_head.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_mot3c.motion3.json",
+          "File": "motion/yuk_3c_head_shaking_right.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_mot4c.motion3.json",
+          "File": "motion/yuk_4c_closed_eyes_sighing.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
@@ -201,32 +201,32 @@
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_mot1-2.motion3.json",
+          "File": "motion/yuk_motA-B.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_mot1-3.motion3.json",
+          "File": "motion/yuk_motA-C.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_mot2-1.motion3.json",
+          "File": "motion/yuk_motB-A.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_mot2-3.motion3.json",
+          "File": "motion/yuk_motB-C.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_mot3-1.motion3.json",
+          "File": "motion/yuk_motC-A.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         },
         {
-          "File": "motion/yuk_mot3-2.motion3.json",
+          "File": "motion/yuk_motC-B.motion3.json",
           "FadeInTime": 2.0,
           "FadeOutTime": 2.0
         }

@@ -11,7 +11,7 @@
   <title>VoxEMW · 数字人语音助手</title>
   <!-- 内联 favicon：避免浏览器请求 /favicon.ico 404（orchestrator 未提供） -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23f77fa8'/></svg>" />
-  <link rel="stylesheet" href="/static/style.css?v=20260818a" />
+  <link rel="stylesheet" href="/static/style.css?v=20260819a" />
 </head>
 <body>
 
@@ -31,6 +31,11 @@
     </div>
     <div id="history-list" class="history-list"></div>
   </aside>
+
+  <!-- 演出控制（作者 demo 同款交互）：目光跟随 / 模拟说话 / 服装 / 表情 / 动作。
+       content 由 assistant.js 在 2dlive 引擎就绪后构建；按钮默认隐藏 -->
+  <button id="perf-toggle" class="perf-toggle hidden" title="演出控制">🎭</button>
+  <div id="performance-drawer" class="performance-drawer hidden"></div>
 
   <main class="stage">
     <div class="stage-bg"></div>
@@ -66,7 +71,7 @@
   <script src="/static/live2d/runtime/pixi.min.js"></script>
   <script src="/static/live2d/runtime/live2dcubismcore.min.js"></script>
   <script src="/static/live2d/runtime/cubism4.min.js"></script>
-  <script src="/static/yukino2d.js?v=20260818e"></script>
-  <script src="/static/assistant.js?v=20260818b"></script>
+  <script src="/static/yukino2d.js?v=20260819e"></script>
+  <script src="/static/assistant.js?v=20260819g"></script>
 </body>
 </html>

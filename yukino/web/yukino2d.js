@@ -8,7 +8,15 @@
  *   /static/live2d/runtime/cubism4.min.js
  *
  * API（与旧 yukino2d 三部件引擎一致）：
- *   initYukino2D(canvas, {model}) → { setMouth(v), isReady(), destroy() }
+ *   initYukino2D(canvas, {model}) → {
+ *     setMouth(v), isReady(), destroy(),
+ *     playMotion(name), setExpression(name), setPose(name),
+ *     setFollow(on),      // 鼠标目光跟随（focusController，默认开；仅画布内跟随）
+ *     setAutoPose(on),    // 待机姿势自动轮换（手动选姿态后关）
+ *     talkDemo(sec),      // 模拟说话口型（无需音频）
+ *     playChoreography(steps),  // 动作编排：按作者预置时长顺序播 表情/动作/姿势/停顿
+ *     listMotions(), listExpressions(),
+ *   }
  *     model 可覆盖 model3.json URL；默认制服 yukino_seihuku，?outfit=shihuku 用私服
  *   createOpennessTracker(opts)  → { step(rms) -> 0..1 }
  *
@@ -19,19 +27,21 @@
 (function () {
   "use strict";
 
-  /* 默认模型：?outfit=shihuku 可切换私服（私服=shihuku 为官方拼写） */
+  /* 默认模型：?outfit=shihuku 可切换私服（私服=shihuku 为官方拼写）。
+   * ?v= 缓存版本号：模型文件改名/更新后浏览器强制拉新 model3.json，
+   * 否则旧缓存仍引用旧 motion 名 → 404（2026-08-19 事故）。 */
   const DEFAULT_MODEL_URL = (() => {
     const outfit = new URLSearchParams(location.search).get("outfit");
-    return outfit === "shihuku"
+    return (outfit === "shihuku"
       ? "/static/live2d/models/yukino/yukino_shihuku.model3.json"
-      : "/static/live2d/models/yukino/yukino_seihuku.model3.json";
+      : "/static/live2d/models/yukino/yukino_seihuku.model3.json") + "?v=20260819e";
   })();
 
-  /* 默认姿势：?pose=pose1|pose2|pose3 可指定初始 Idle 姿势 */
+  /* 默认姿势：?pose=pose1|pose2|pose3 或 poseA|poseB|poseC 指定初始 Idle 姿势 */
   const DEFAULT_POSE = (() => {
     const p = (new URLSearchParams(location.search).get("pose") || "pose1").toLowerCase();
-    if (p === "pose2" || p === "2") return "Pose2";
-    if (p === "pose3" || p === "3") return "Pose3";
+    if (p === "pose2" || p === "2" || p === "poseb" || p === "b") return "Pose2";
+    if (p === "pose3" || p === "3" || p === "posec" || p === "c") return "Pose3";
     return "Pose1";
   })();
 
@@ -114,6 +124,17 @@
       poseTransition: null, // {from,to,group,start,duration,holdUntil,started}
       armNoiseEnv: 1,      // 手臂自然动作权重：姿势过渡期间淡出、结束后淡入，避免到位瞬间抖动
       _lastArmT: 0,
+      // 鼠标目光跟随（作者 demo 同款 focusController）：光标在画布内才跟随；
+      // 移出画布/说话/编排期间缓慢复位看向中央（不瞬跳）
+      followOn: true,
+      cursor: { x: 0, y: 0 },          // 缓动后的实际注视点（喂给 focusController）
+      cursorTarget: { x: 0, y: 0 },    // 光标原始位置（仅画布内更新）
+      cursorIn: false,                 // 光标是否在画布内
+      _lastFollowT: 0,
+      choreoRunning: false,            // 动作编排进行中（跟随让位给演出）
+      demoStart: 0, demoUntil: 0,   // 模拟说话（talkDemo）时间窗，期间口型/手势由引擎接管
+      autoPose: true,                // 待机姿势自动轮换；手动选姿态后可由 setAutoPose 关闭
+      currentMotionDuration: 0,      // 最近一次创建的 motion 的 Meta.Duration（作者预置时长，秒）
     };
     canvas.dataset.live2d = "loading";
     // 右侧对话面板悬浮宽度（12px 间距 + 380px 面板）：模型在余下舞台居中。
@@ -246,6 +267,9 @@
         }
         const motion = origCreate(motionData, group, definition);
         if (!motion) return motion;
+        // 记录作者预置时长（Meta.Duration，秒），供编排引擎按动作自身时长推进
+        state.currentMotionDuration = (motionData && motionData.Meta
+          && typeof motionData.Meta.Duration === "number") ? motionData.Meta.Duration : 0;
         try {
           if (meta && typeof motion.setIsLoop === "function") {
             motion.setIsLoop(!!meta.Loop);
@@ -426,8 +450,10 @@
 
     async function setPose(name, immediate) {
       if (!state.ready || !model) return false;
+      // 接受 pose1/pose2/pose3 与用户重命名后的 poseA/poseB/poseC（a/b/c → 1/2/3）
       const key = String(name || "pose1").toLowerCase().replace(/^pose/, "");
-      const group = "Pose" + key;
+      const num = key === "a" ? "1" : key === "b" ? "2" : key === "c" ? "3" : key;
+      const group = "Pose" + num;
       const groups = getMotionGroups();
       if (!groups[group]) {
         console.warn("[yukino2d] 未知姿态:", name);
@@ -452,6 +478,18 @@
       const next = order[state.poseIndex];
       console.info("[yukino2d] 自动切换 Idle 姿势 ->", next);
       setPose(next);
+    }
+
+    /* 待机姿势自动轮换开关：手动点选姿态后关闭，雪乃保持用户选的姿势；
+     * 重开则从 8~14s 后重新开始轮换。 */
+    function setAutoPose(on) {
+      state.autoPose = !!on;
+      if (state.autoPose) {
+        state.nextPoseAt = performance.now() + 8000 + Math.random() * 6000;
+      } else {
+        state.nextPoseAt = 0;
+      }
+      console.info("[yukino2d] 待机姿势自动轮换:", state.autoPose ? "开" : "关");
     }
 
     function listMotions() {
@@ -548,6 +586,114 @@
       };
     }
 
+    /* ---------------- 鼠标目光跟随（作者 demo 同款） ----------------
+     * 光标相对画布归一化到 [-1,1]（x 左负右正，y 上正下负）。仅光标在画布
+     * （模型框）内时记录目标；移出画布/失焦只清 cursorIn 标志，由帧循环
+     * 每帧缓动回中央（缓慢复位，不瞬跳）。focusController 自带二阶阻尼，
+     * 叠加此处缓动 = 平滑追随 + 平缓归位。 */
+    function onPointerMove(ev) {
+      if (!state.followOn) return;
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const px = ev.clientX, py = ev.clientY;
+      const inside = px >= rect.left && px <= rect.right && py >= rect.top && py <= rect.bottom;
+      if (inside) {
+        state.cursorIn = true;
+        state.cursorTarget.x = clamp((px - rect.left) / rect.width * 2 - 1, -1, 1);
+        state.cursorTarget.y = clamp(1 - (py - rect.top) / rect.height * 2, -1, 1);
+      } else {
+        state.cursorIn = false;   // 移出模型框 → 帧循环缓慢复位
+      }
+    }
+    function onBlurReset() {
+      state.cursorIn = false;
+    }
+    function setFollow(on) {
+      const v = !!on;
+      if (state.followOn === v) return;
+      state.followOn = v;
+      const fc = model && model.internalModel && model.internalModel.focusController;
+      if (fc && !v) fc.focus(0, 0);  // 关闭时复位视线到中央
+      console.info("[yukino2d] 目光跟随:", v ? "开" : "关");
+    }
+
+    /* 模拟说话：duration 秒内的假口型包络（音节半波 × 语调起伏），
+     * 返回 0..1 或 null（不在演示窗口内）。窗口期内口型与手势由引擎接管，
+     * 外部 setMouth(RMS≈0) 不会把它覆盖掉。 */
+    function demoMouthValue(t) {
+      if (state.demoUntil <= t) return null;
+      const el = t - state.demoStart;
+      const pulse = Math.max(0, Math.sin(el * Math.PI * 5));   // ~5 音节/秒
+      const wobble = 0.6 + 0.4 * Math.sin(el * 2.3);           // 语调起伏
+      return clamp(0.12 + pulse * 0.55 * wobble, 0, 1);
+    }
+    function talkDemo(duration) {
+      const dur = (typeof duration === "number" && duration > 0) ? duration : 4;
+      const now = performance.now() / 1000;
+      state.demoStart = now;
+      state.demoUntil = now + dur;
+      console.info(`[yukino2d] 模拟说话 ${dur}s`);
+    }
+
+    /* ---------------- 动作编排（演出流程） ----------------
+     * playChoreography(steps) 按顺序播放一串步骤：
+     *   {type:"expression", value} / {type:"motion", value}
+     *   {type:"pose", value} / {type:"pause", ms}
+     * motion 步骤按作者预置时长（Meta.Duration，秒）推进，并在结尾提前 fadeOut
+     * 重叠启动下一步（衔接过渡保留，不硬切）。编排期间暂停姿势自动轮换；
+     * 新一次调用会打断上一轮。 */
+    let choreoId = 0;
+    function waitMs(ms) {
+      return new Promise((res) => setTimeout(res, Math.max(0, ms)));
+    }
+    async function playMotionChoreo(name) {
+      if (!state.ready || !model) return 0;
+      const idx = motionIndexFromName(name);
+      if (idx < 0) {
+        console.warn("[yukino2d] 编排未知动作:", name);
+        return 0;
+      }
+      state.poseTransition = null;
+      state.actionUntil = performance.now() + 3500;
+      state.currentMotionDuration = 0;
+      await model.motion("Action", idx, 3);
+      return state.currentMotionDuration || 3.5;   // 兜底 3.5s
+    }
+    async function playChoreography(steps) {
+      if (!state.ready || !Array.isArray(steps) || !steps.length) return false;
+      const id = ++choreoId;
+      const wasAuto = state.autoPose;
+      state.autoPose = false;        // 编排期间不自动换姿势
+      state.choreoRunning = true;    // 编排期间目光跟随让位（避免与动作打架）
+      try {
+        for (const step of steps) {
+          if (id !== choreoId || state.destroyed) break;   // 新编排打断旧编排
+          if (!step || typeof step !== "object") continue;
+          const s = step.type;
+          try {
+            if (s === "expression") {
+              await setExpression(step.value);
+              await waitMs(500);
+            } else if (s === "motion") {
+              const dur = await playMotionChoreo(step.value);
+              if (dur > 0) await waitMs(Math.max(0, dur * 1000 - 1400));  // 留 1.4s fadeOut 重叠
+            } else if (s === "pose") {
+              await setPose(step.value);
+              await waitMs(400);
+            } else if (s === "pause") {
+              await waitMs(step.ms || 0);
+            }
+          } catch (e) {
+            console.warn("[yukino2d] 编排步骤失败:", e);
+          }
+        }
+      } finally {
+        state.choreoRunning = false;
+        state.autoPose = wasAuto;
+      }
+      return true;
+    }
+
 
 
     /* 自然肢体动作 + 说话协同：
@@ -558,7 +704,9 @@
       if (!model || !model.internalModel) return;
       const core = model.internalModel.coreModel;
       const t = performance.now() / 1000;
-      const talk = state.talk || 0;
+      // 模拟说话窗口期内：口型由假包络接管（外部 setMouth 不覆盖），手势能量拉高
+      const demo = demoMouthValue(t);
+      const talk = (demo !== null) ? 0.8 : (state.talk || 0);
       // 手臂姿势过渡：先快后慢旋转到目标手臂值，完成后再启动预设 motion
       const transitioning = updatePoseTransition(t);
       // 手臂自然动作权重：过渡期间淡出、结束后平滑淡入（时间常数 ~0.2s），
@@ -566,12 +714,34 @@
       const armDt = state._lastArmT ? Math.min(0.1, t - state._lastArmT) : 0.016;
       state._lastArmT = t;
       state.armNoiseEnv += ((transitioning ? 0 : 1) - state.armNoiseEnv) * Math.min(1, armDt * 5);
-      core.setParameterValueById("PARAM_MOUTH_OPEN_Y", mouthParam(state.mouth));
-      // 眼睛转动（说话时更明显）：眼珠切片 PARTS_01_EYE_BALL_001 由
-      // PARAM_EYE_BALL_X/Y 驱动，叠加随机扫视
-      const gaze = updateEyeGaze(t, talk);
-      core.addParameterValueById("PARAM_EYE_BALL_X", gaze.x);
-      core.addParameterValueById("PARAM_EYE_BALL_Y", gaze.y);
+      core.setParameterValueById(
+        "PARAM_MOUTH_OPEN_Y",
+        mouthParam(demo !== null ? demo : state.mouth)
+      );
+      // 目光：followOn → focusController 接管（运行时 updateFocus 写 EYE_BALL_X/Y、
+      // ANGLE_X/Y/Z、BODY_ANGLE_X，带二阶阻尼）；关闭 → 自身随机扫视 + 头摆噪声。
+      // 跟随条件：光标在画布内 + 未在说话（talk<0.25）+ 无编排在跑——
+      // 说话/演出期间跟随让位，缓慢复位看向中央，避免与动作打架。
+      if (state.followOn) {
+        const fc = model.internalModel.focusController;
+        if (fc) {
+          const followActive = state.cursorIn && talk < 0.25 && !state.choreoRunning;
+          const dt = state._lastFollowT ? Math.min(0.05, t - state._lastFollowT) : 0.016;
+          state._lastFollowT = t;
+          const tx = followActive ? state.cursorTarget.x : 0;
+          const ty = followActive ? state.cursorTarget.y : 0;
+          const k = 1 - Math.exp(-dt * 2.5);   // ~0.4s 半衰期：平缓追随、移出缓慢复位
+          state.cursor.x += (tx - state.cursor.x) * k;
+          state.cursor.y += (ty - state.cursor.y) * k;
+          fc.focus(state.cursor.x, state.cursor.y);
+        }
+      } else {
+        // 眼睛转动（说话时更明显）：眼珠切片 PARTS_01_EYE_BALL_001 由
+        // PARAM_EYE_BALL_X/Y 驱动，叠加随机扫视
+        const gaze = updateEyeGaze(t, talk);
+        core.addParameterValueById("PARAM_EYE_BALL_X", gaze.x);
+        core.addParameterValueById("PARAM_EYE_BALL_Y", gaze.y);
+      }
       // 手/手臂自然动作（过渡期间噪声权重趋 0，让过渡曲线干净）
       const arm = updateArmMotion(t, talk);
       const aw = state.armNoiseEnv;
@@ -589,29 +759,32 @@
       }
       // 自动轮换 Idle 姿势：说话/动作/过渡期间不换，避免打断表演
       const nowMs = performance.now();
-      if (!transitioning && state.nextPoseAt > 0 && nowMs >= state.nextPoseAt
+      if (state.autoPose && !transitioning && state.nextPoseAt > 0 && nowMs >= state.nextPoseAt
           && talk < 0.15 && nowMs >= state.actionUntil) {
         state.nextPoseAt = nowMs + 18000 + Math.random() * 14000;
         setTimeout(cyclePose, 0);  // 延迟到本帧外再切，避免在 beforeModelUpdate 里动 motion
       }
-      // 头/身体自然摆动（噪声驱动，避免固定周期机械感）
-      core.addParameterValueById(
-        "PARAM_ANGLE_X",
-        fbm1(t * 0.24, 201) * (2.6 + talk * 1.5)
-        + talk * fbm1(t * 1.1, 211) * 1.8   // 说话时不规则点头/强调
-      );
-      core.addParameterValueById(
-        "PARAM_ANGLE_Y",
-        fbm1(t * 0.2, 202) * (2.0 + talk * 1.0)
-      );
-      core.addParameterValueById(
-        "PARAM_ANGLE_Z",
-        fbm1(t * 0.16, 203) * 1.3
-      );
-      core.addParameterValueById(
-        "PARAM_BODY_ANGLE_X",
-        fbm1(t * 0.18, 204) * 1.5
-      );
+      // 头/身体自然摆动（噪声驱动，避免固定周期机械感）。
+      // 仅 followOff 时本模块写；followOn 时 focusController 已接管 ANGLE/BODY_ANGLE。
+      if (!state.followOn) {
+        core.addParameterValueById(
+          "PARAM_ANGLE_X",
+          fbm1(t * 0.24, 201) * (2.6 + talk * 1.5)
+          + talk * fbm1(t * 1.1, 211) * 1.8   // 说话时不规则点头/强调
+        );
+        core.addParameterValueById(
+          "PARAM_ANGLE_Y",
+          fbm1(t * 0.2, 202) * (2.0 + talk * 1.0)
+        );
+        core.addParameterValueById(
+          "PARAM_ANGLE_Z",
+          fbm1(t * 0.16, 203) * 1.3
+        );
+        core.addParameterValueById(
+          "PARAM_BODY_ANGLE_X",
+          fbm1(t * 0.18, 204) * 1.5
+        );
+      }
     }
 
     (async function boot() {
@@ -675,6 +848,10 @@
         state.nextPoseAt = performance.now() + 8000 + Math.random() * 6000;
 
         window.addEventListener("resize", onResize);
+        window.addEventListener("pointermove", onPointerMove);
+        window.addEventListener("mousemove", onPointerMove);   // 老内核回退
+        window.addEventListener("blur", onBlurReset);          // 失焦回看中央
+        canvas.addEventListener("mouseleave", onBlurReset);    // 光标离开画布回看中央
         state.ready = true;
         canvas.dataset.live2d = "ready";
         console.info(`[yukino2d] Live2D 模型已就绪: ${modelUrl}`);
@@ -705,11 +882,19 @@
       playMotion,
       setExpression,
       setPose,
+      setFollow,
+      setAutoPose,
+      talkDemo,
+      playChoreography,
       listMotions,
       listExpressions,
       destroy() {
         state.destroyed = true;
         window.removeEventListener("resize", onResize);
+        window.removeEventListener("pointermove", onPointerMove);
+        window.removeEventListener("mousemove", onPointerMove);
+        window.removeEventListener("blur", onBlurReset);
+        canvas.removeEventListener("mouseleave", onBlurReset);
         window.clearTimeout(resizeTimer);
         if (model) {
           try {

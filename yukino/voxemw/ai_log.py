@@ -26,8 +26,8 @@ _ai_log_counter = 0
 
 
 def resolve_ai_log_dir() -> Path:
-    """日志目录：优先 VOXEMW_AI_LOG_DIR 环境变量，默认 <repo>/log/ai。"""
-    default = str(Path(__file__).resolve().parent.parent.parent / "log" / "ai")
+    """日志目录：优先 VOXEMW_AI_LOG_DIR 环境变量，默认 <yukino>/log/ai。"""
+    default = str(Path(__file__).resolve().parent.parent / "log" / "ai")
     return Path(os.environ.get("VOXEMW_AI_LOG_DIR", "") or default)
 
 
@@ -46,9 +46,26 @@ def parse_perf_directive(text: str) -> list[dict]:
     return steps
 
 
+# 编排步骤开头：区分「行内引用【演出】」（后跟散文）和「真演出段」（后跟步骤）
+_STEP_START = re.compile(r"\s*(expression|motion|pose|pause)\s*[:：]")
+
+
+def _perf_marker_idx(text: str) -> int:
+    """找【演出】标记位置：行首，或行内但后跟编排步骤 → 真标记；
+    行内引用（如译文里写「【演出】的格式」）不算，避免译文被从中间截断。"""
+    i = text.find(PERF_MARKER)
+    while i >= 0:
+        after = text[i + len(PERF_MARKER):]
+        at_bol = i == 0 or text[i - 1] == "\n"
+        if at_bol or _STEP_START.match(after):
+            return i
+        i = text.find(PERF_MARKER, i + len(PERF_MARKER))
+    return -1
+
+
 def split_perf_section(text: str) -> tuple[str, str]:
     """从文本里拆出【演出】段。返回 (去演出段文本, 演出段原文)。"""
-    idx = text.find(PERF_MARKER)
+    idx = _perf_marker_idx(text)
     if idx < 0:
         return text, ""
     return text[:idx].rstrip(), text[idx + len(PERF_MARKER):].strip()

@@ -69,11 +69,54 @@ class BilingualFlow:
     JA = "【日语】"
     ZH = "【译文】"
     PERF = "【演出】"
+    # 编排步骤开头的类型前缀：区分「行内引用【演出】」（后跟散文，如「的格式」）
+    # 和「真正的演出段」（后跟 expression:/motion: 等步骤）。2026-08-19 修复。
+    _STEP_START = re.compile(r"\s*(expression|motion|pose|pause)\s*[:：]")
+    _STEP_NAMES = ("expression", "motion", "pose", "pause")
 
     def __init__(self):
         self.buf = ""
         self.mode = "none"
         self.perf_buf = ""
+        self._bol = True  # 上一个已发出字符是否为换行（流式跨 chunk 的行首判断）
+
+    @staticmethod
+    def _is_step_prefix(text: str) -> bool:
+        """【演出】后面的内容看起来是编排步骤（或步骤前缀，尚未到齐）。"""
+        if BilingualFlow._STEP_START.match(text):
+            return True
+        t = text.lstrip()
+        if not t:
+            return True  # 只有空白，可能后面就是步骤
+        for name in BilingualFlow._STEP_NAMES:
+            if name.startswith(t) or t.startswith(name):
+                return True
+        return False
+
+    def _scan_perf(self, s: str) -> int:
+        """找【演出】标记位置：行首，或行内但后跟编排步骤 → 真标记；
+        行内引用（后跟散文）不算，避免把译文从中间截断。"""
+        j = s.find(self.PERF)
+        while j >= 0:
+            after = s[j + len(self.PERF):]
+            at_bol = (j == 0 and self._bol) or (j > 0 and s[j - 1] == "\n")
+            if at_bol or BilingualFlow._STEP_START.match(after):
+                return j
+            j = s.find(self.PERF, j + len(self.PERF))
+        return -1
+
+    def _perf_hold_len(self, s: str) -> int:
+        """尾部需暂留的字符数：标记未到齐，或标记后跟的步骤前缀尚未能判定。"""
+        for h in range(min(len(self.PERF) - 1, len(s)), 0, -1):
+            if s[-h:] == self.PERF[:h]:
+                return h
+        j = s.rfind(self.PERF)
+        if j >= 0:
+            after = s[j + len(self.PERF):]
+            if after and BilingualFlow._is_step_prefix(after) \
+                    and not BilingualFlow._STEP_START.match(s[j:]):
+                return len(s) - j
+        return 0
 
     def feed(self, text: str) -> tuple[str, str, str]:
         """喂入一段流式文本，返回 (日语增量, 译文增量, 演出增量)。"""
@@ -88,7 +131,7 @@ class BilingualFlow:
             s = self.buf
             if self.mode == "none":
                 ja_at = s.find(self.JA)
-                perf_at = s.find(self.PERF)
+                perf_at = self._scan_perf(s)
                 # 取最早出现的标记（【日语】优先，容错标签顺序漂移）
                 if ja_at >= 0 and (perf_at < 0 or ja_at <= perf_at):
                     self.buf = s[ja_at + len(self.JA):]
@@ -98,10 +141,10 @@ class BilingualFlow:
                     self.buf = s[perf_at + len(self.PERF):]
                     self.mode = "perf"
                     continue
-                break  # 无标记：整段保留，不产出增量（EndOfResponse 兜底用）
+                break  # 无确认标记：整段保留，不产出增量（EndOfResponse 兜底用）
             if self.mode == "ja":
                 zh_at = s.find(self.ZH)
-                perf_at = s.find(self.PERF)
+                perf_at = self._scan_perf(s)
                 if zh_at >= 0 or perf_at >= 0:
                     if perf_at >= 0 and (zh_at < 0 or perf_at < zh_at):
                         # 【演出】跑到【译文】前（LLM 顺序漂移）：日语止于演出标记
@@ -119,19 +162,14 @@ class BilingualFlow:
                     self.buf = s[safe:]
                 break
             if self.mode == "zh":
-                perf_at = s.find(self.PERF)
+                perf_at = self._scan_perf(s)
                 if perf_at >= 0:
                     zh_d += s[:perf_at]
                     self.buf = s[perf_at + len(self.PERF):]
                     self.mode = "perf"
                     continue
-                # 仅当尾部看起来是【演出】标记前缀时才暂留（防标记被切开），
-                # 否则译文立即输出——zh 是尾段，常驻延迟会拖慢聊天框
-                hold = 0
-                for h in range(min(len(self.PERF) - 1, len(s)), 0, -1):
-                    if s[-h:] == self.PERF[:h]:
-                        hold = h
-                        break
+                # 尾部可能是未到齐/未判定的【演出】标记时暂留，否则译文立即输出
+                hold = self._perf_hold_len(s)
                 safe = len(s) - hold
                 if safe > 0:
                     zh_d += s[:safe]
@@ -143,18 +181,29 @@ class BilingualFlow:
             break
         if perf_d:
             self.perf_buf += perf_d
+        emitted = ja_d + zh_d
+        if emitted:
+            self._bol = emitted[-1] == "\n"  # 跨 chunk 的行首判断
         return ja_d, zh_d, perf_d
 
     def reset(self) -> None:
         self.buf = ""
         self.mode = "none"
         self.perf_buf = ""
+        self._bol = True
 
     @staticmethod
     def strip_perf(text: str) -> str:
-        """剥掉【演出】标记及其后的编排指令（兜底朗读/显示时用）。"""
-        idx = text.find(BilingualFlow.PERF)
-        return text[:idx].rstrip() if idx >= 0 else text
+        """剥掉【演出】段（兜底朗读/显示时用）。行首标记或行内后跟步骤的真演出才剥，
+        行内引用【演出】不剥。"""
+        j = text.find(BilingualFlow.PERF)
+        while j >= 0:
+            after = text[j + len(BilingualFlow.PERF):]
+            at_bol = (j == 0 or text[j - 1] == "\n")
+            if at_bol or BilingualFlow._STEP_START.match(after):
+                return text[:j].rstrip()
+            j = text.find(BilingualFlow.PERF, j + len(BilingualFlow.PERF))
+        return text
 
 
 class _AtempoStretcher:

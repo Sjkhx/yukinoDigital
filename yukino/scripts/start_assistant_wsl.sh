@@ -61,6 +61,48 @@ stop() {
 if [ "${1:-}" = "stop" ]; then stop; exit 0; fi
 if [ "${1:-}" = "status" ]; then status; exit 0; fi
 
+# 只启动 GPT-SoVITS（pipeline/orchestrator 改在 Windows 跑时用：
+#   bash scripts/start_assistant_wsl.sh gptsovits
+#   powershell -File scripts/start_assistant_win.ps1）
+start_gptsovits() {
+    log "启动 GPT-SoVITS V2ProPlus（myenv，:8899，模型加载约 30s）..."
+    (
+        cd "$TTS_ROOT"
+        setsid nohup "$TTS_PY" "$TTS_SERVER" --port "$TTS_PORT" \
+            >> "$ROOT/logs/gptsovits_v2proplus.log" 2>&1 < /dev/null &
+        echo $! > "$ROOT/logs/gptsovits_v2proplus.pid"
+        disown
+    )
+    TTS_PID=$(cat logs/gptsovits_v2proplus.pid)
+    echo "    PID=$TTS_PID，日志 logs/gptsovits_v2proplus.log"
+
+    log "等待 GPT-SoVITS（:8899，最多 180s）..."
+    TTS_READY=0
+    for i in $(seq 1 90); do
+        if curl -fsS --max-time 2 "http://127.0.0.1:$TTS_PORT/health" >/dev/null 2>&1; then
+            echo "    gptsovits 就绪（${i}0s 内）"
+            TTS_READY=1
+            break
+        fi
+        if ! kill -0 "$TTS_PID" 2>/dev/null; then
+            echo "    错误：gptsovits 进程已退出！日志尾部："
+            tail -30 logs/gptsovits_v2proplus.log
+            exit 1
+        fi
+        sleep 2
+    done
+    if [ "$TTS_READY" != "1" ]; then
+        echo "    错误：gptsovits 等待超时，日志尾部："
+        tail -30 logs/gptsovits_v2proplus.log
+        exit 1
+    fi
+}
+if [ "${1:-}" = "gptsovits" ]; then
+    if ss -tln 2>/dev/null | grep -q ":8899 "; then echo ":8899 已在线（gptsovits 已在跑）"; exit 0; fi
+    start_gptsovits
+    exit 0
+fi
+
 # ── 依赖自检 ──
 if ! "$PY" -c "import silero_vad" 2>/dev/null; then
     log "silero-vad 缺失，自动补装（$PIP_MIRROR）..."
@@ -101,37 +143,7 @@ if [ "$BACKEND" != "2dlive" ]; then
 fi
 
 # ── 1. GPT-SoVITS V2ProPlus ──
-log "启动 GPT-SoVITS V2ProPlus（myenv，:8899，模型加载约 30s）..."
-(
-    cd "$TTS_ROOT"
-    setsid nohup "$TTS_PY" "$TTS_SERVER" --port "$TTS_PORT" \
-        >> "$ROOT/logs/gptsovits_v2proplus.log" 2>&1 < /dev/null &
-    echo $! > "$ROOT/logs/gptsovits_v2proplus.pid"
-    disown
-)
-TTS_PID=$(cat logs/gptsovits_v2proplus.pid)
-echo "    PID=$TTS_PID，日志 logs/gptsovits_v2proplus.log"
-
-log "等待 GPT-SoVITS（:8899，最多 180s）..."
-TTS_READY=0
-for i in $(seq 1 90); do
-    if curl -fsS --max-time 2 "http://127.0.0.1:$TTS_PORT/health" >/dev/null 2>&1; then
-        echo "    gptsovits 就绪（${i}0s 内）"
-        TTS_READY=1
-        break
-    fi
-    if ! kill -0 "$TTS_PID" 2>/dev/null; then
-        echo "    错误：gptsovits 进程已退出！日志尾部："
-        tail -30 logs/gptsovits_v2proplus.log
-        exit 1
-    fi
-    sleep 2
-done
-if [ "$TTS_READY" != "1" ]; then
-    echo "    错误：gptsovits 等待超时，日志尾部："
-    tail -30 logs/gptsovits_v2proplus.log
-    exit 1
-fi
+start_gptsovits
 
 # ── 2. 语音管线 ──
 log "启动语音管线（.venv，:8765）..."

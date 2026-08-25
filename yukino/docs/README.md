@@ -13,14 +13,17 @@
 浏览器（web/，Live2D 前端渲染 + 聊天面板 + 历史抽屉）
    │  ws :8000
    ▼
-orchestrator（CPU，Windows 或 WSL 均可）
-   ├─→ s2s 语音管线（:8765）  VAD → STT → LLM → TTS
+orchestrator（Windows，CPU，:8000 浏览器唯一入口）
+   ├─→ s2s 语音管线（Windows，:8765）  VAD → STT → LLM → TTS
+   ├─→ GPT-SoVITS V2ProPlus（WSL2，:8899）——唯一留在 WSL 的服务
    └─→ avatar.backend=2dlive 时无 avatar ws（口型由浏览器本地音频分析驱动）
 ```
 
-- s2s 管线：WSL2 内 `voxemw.pipeline.launch`（:8765）
-- GPT-SoVITS V2ProPlus：WSL2 内常驻服务（:8899）
-- orchestrator：`voxemw.avatar.orchestrator`（:8000，浏览器唯一入口）
+双机拆分（2026-08-19 起）：
+- **pipeline（:8765）+ orchestrator（:8000）跑在 Windows**，直接读仓库代码，改完即生效，
+  无需向 WSL 同步；对应脚本 `scripts/start_assistant_win.ps1`
+- **GPT-SoVITS V2ProPlus（:8899）留在 WSL2**（conda `myenv` + `~/GPT-SoVITS` 权重），
+  用 `scripts/start_assistant_wsl.sh gptsovits` 单独启动
 
 ## 七块积木（configs/assistant.yaml）
 
@@ -37,18 +40,18 @@ orchestrator（CPU，Windows 或 WSL 均可）
 
 ## 快速启动
 
-环境基于 WSL2（TTS/语音管线需 CUDA GPU）。首次安装见 `docs/SETUP_WSL.md`，
-之后启动只需一条命令：
+服务拆两台跑：**GPT-SoVITS 在 WSL2（:8899）**，**pipeline + orchestrator 在 Windows
+（:8765 / :8000）**。代码在 Windows 仓库直接运行，改完即生效，无需向 WSL 同步。
+首次安装见 `docs/SETUP_WSL.md`（Windows venv + WSL GPT-SoVITS），之后启动两步：
 
 ```bash
-# 进入 VoxEMW 目录（仓库的 yukino/ 子目录，或独立克隆的仓库根）
-cd yukino
+# 第 1 步：WSL2 内启动 GPT-SoVITS（:8899）
+bash scripts/start_assistant_wsl.sh gptsovits
+```
 
-# 首次：安装环境（建 venv、装依赖、生成 .env.local，幂等）
-bash scripts/setup_wsl.sh
-
-# 启动三服务：GPT-SoVITS（:8899）→ s2s 管线（:8765）→ orchestrator（:8000）
-bash scripts/start_assistant_wsl.sh
+```powershell
+# 第 2 步：Windows PowerShell 启动 pipeline + orchestrator（:8765 :8000）
+powershell -File scripts/start_assistant_win.ps1
 ```
 
 打开：
@@ -57,9 +60,11 @@ bash scripts/start_assistant_wsl.sh
 http://127.0.0.1:8000/
 ```
 
-> orchestrator（:8000）也可在 Windows 上单独跑：
-> `python -m voxemw.avatar.orchestrator`（`avatar.backend=2dlive` 前端本地渲染，
-> 无需后端 GPU；但完整语音对话仍需 WSL 里的 GPT-SoVITS 与 s2s 管线）。
+停止/状态：
+- Windows 两服务：`powershell -File scripts/start_assistant_win.ps1 stop|status`
+- WSL GPT-SoVITS：`bash scripts/start_assistant_wsl.sh stop|status`（`stop` 只影响 WSL
+  内进程，即 GPT-SoVITS；Windows 侧两服务由 ps1 管理）
+- 日志：Windows `logs/{pipeline,orchestrator}.{out,err}.log`；WSL `logs/gptsovits_v2proplus.log`
 
 ## 对话历史
 
@@ -80,8 +85,9 @@ http://127.0.0.1:8000/
 - 待机姿势自动轮换（Pose1/2/3，每 18~32s），切换时手臂 ease + 动作淡入一次平滑过渡；
 - 前端内置情绪 agent，根据本轮日语回复自动选择表情/动作；
 - `web/yukino2d.js` 含运行时 bug 补丁（pixi-live2d-display 忽略 `Meta.Loop` → 补 `setIsLoop`、
-  循环曲线首尾对齐、手臂噪声过渡包络、动作播放在过渡开始即启动）。改前端后需同步 WSL
-  运行副本并升 `index.html` 的 `?v=` 版本号，见 `docs/wsl2-troubleshooting.md` 坑 11；
+  循环曲线首尾对齐、手臂噪声过渡包络、动作播放在过渡开始即启动）。orchestrator 在 Windows
+  直接读仓库 `web/`，改完刷新浏览器即生效；浏览器仍缓存时升 `index.html` 的 `?v=` 版本号
+  （2026-08-19 前 WSL 运行副本需 `sync_to_wsl.sh` 同步，已停用，见 `docs/wsl2-troubleshooting.md`）；
 - 暴露全局 API 供 agent 调用：
 
 ```js

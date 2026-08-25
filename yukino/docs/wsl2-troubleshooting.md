@@ -1,8 +1,13 @@
 # 本地 WSL2 部署踩坑记录
 
-2026-08-09 在本地 Windows + WSL2（Ubuntu，仓库根即 VoxEMW 项目源码）+ RTX 5080
-部署 2dlive 数字人时踩过的坑与解法。环境前提：开发副本在 Windows 桌面 git 仓库，
-运行副本（无 git）在 WSL2，`scripts/sync_to_wsl.sh` 同步（排除 .venv/.git/data/logs/.env.local）。
+2026-08-09 起在本地 Windows + WSL2（Ubuntu，仓库根即 VoxEMW 项目源码）+ RTX 5080
+部署 2dlive 数字人时踩过的坑与解法。
+
+> **当前部署形态（2026-08-19 起）**：pipeline + orchestrator 已搬到 **Windows**（读仓库代码
+> 改完即生效），WSL 只留 **GPT-SoVITS**（:8899）。此前「开发副本（Windows git 仓库）→
+> WSL2 运行副本（无 git）+ `scripts/sync_to_wsl.sh` 同步」的双副本工作流已停用。
+> 坑 2/11 及文末环境速查里「WSL 起全部三服务」的写法为旧形态，仅作历史参考；
+> 坑 1/3/4/5/10 在当前形态下仍适用。
 
 ## 坑 1：wsl.exe 会话退出会杀掉 nohup 后台进程
 
@@ -119,6 +124,10 @@ wsl.exe -d Ubuntu -- bash -c 'bash /tmp/start.sh'
 
 ## 坑 11：WSL 运行副本前端过期，改 web/ 后雪乃行为不生效
 
+> **已过时（2026-08-19 起）**：orchestrator 已搬到 Windows，直接读仓库 `web/`，
+> 改完刷新浏览器即生效，不再需要向 WSL 副本同步。仅浏览器缓存时升 `index.html`
+> 的 `?v=` 版本号。本坑记录保留作历史参考。
+
 **现象**：改了插件仓库 `web/yukino2d.js` / `web/index.html`（姿势轮换、动作补丁等），
 但 WSL 里雪乃表现不变——跑的还是旧前端。
 
@@ -134,16 +143,24 @@ wsl.exe -d Ubuntu -- bash -c 'bash /tmp/start.sh'
 手臂动作），雪乃一直停在默认 Pose1「撩头发」；后端 py/configs 早已同步，唯独前端 JS 漏了。
 把 711 行新版同步到 WSL 后恢复。
 
-## 环境速查
+## 环境速查（2026-08-19 起的拆分式部署）
 
-- 启动（WSL2 内执行，进程全部 setsid 脱离会话）：
+- 启动 GPT-SoVITS（WSL2 内，进仓库目录，setsid 脱离会话）：
+  ```bash
+  bash scripts/start_assistant_wsl.sh gptsovits
+  ```
+- 启动 pipeline + orchestrator（Windows PowerShell）：
+  ```powershell
+  powershell -File scripts\start_assistant_win.ps1
+  ```
+- 等待就绪：GPT-SoVITS :8899 `/health`；pipeline :8765（Windows CPU 进程，无需模型加载）；
+  orchestrator :8000 就绪后浏览器开 `http://localhost:8000`
+- 日志：Windows `logs/{pipeline,orchestrator}.{out,err}.log`；WSL `logs/gptsovits_v2proplus.log`
+- 历史（2026-08-19 前，WSL 跑全部三服务，已停用）：
   ```bash
   cd ~/VoxEMW
   pkill -f "voxemw.pipeline.launch|voxemw.avatar.orchestrator" 2>/dev/null; sleep 1
   setsid nohup .venv/bin/python -m voxemw.pipeline.launch --config configs/assistant.yaml >> logs/pipeline.log 2>&1 < /dev/null & disown
   setsid nohup .venv/bin/python -m voxemw.avatar.orchestrator --config configs/assistant.yaml >> logs/orchestrator.log 2>&1 < /dev/null & disown
   ```
-- 等待就绪：pipeline 打 `Uvicorn running on http://127.0.0.1:8765`（约 3-4 分钟，
-  VoxCPM 4.7G 模型加载）；orchestrator :8000 就绪后浏览器开 `http://localhost:8000`
-- 一键启动脚本：`bash scripts/start_assistant_wsl.sh`（2026-08-09 新增，见同目录）
 - 相关文档：`docs/upgrade-regression.md`（上游升级回归）

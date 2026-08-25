@@ -1,34 +1,53 @@
-# VoxEMW WSL2 安装指南（新用户）
+# VoxEMW 安装指南（Windows + WSL2 双机部署）
 
-从零到跑起来，约 1-2 小时（大头在 GPT-SoVITS 环境与模型下载）。安装分两段：
+从零到跑起来，约 1-2 小时（大头在 GPT-SoVITS 环境与模型下载）。当前部署形态：
 
-- **可自动化**（venv + 依赖）：`bash scripts/setup_wsl.sh`
-- **需手动**（GPT-SoVITS conda 环境 + 代码 + 雪乃权重）：本文第 3 步
+- **Windows**：仓库主体 + `.venv`，跑 pipeline（:8765）+ orchestrator（:8000），
+  读仓库代码改完即生效
+- **WSL2**：只装 GPT-SoVITS V2ProPlus（conda 环境 + 代码 + 雪乃权重），常驻 :8899
 
 ## 1. 硬件要求
 
-- **NVIDIA GPU**（必须）：GPT-SoVITS V2ProPlus 需要 CUDA 推理。RTX 30/40/50 系均可；
-  RTX 50 系（sm_120）必须用 cu128 版 torch（setup 脚本默认就是）。
+- **NVIDIA GPU（WSL2 侧必需）**：GPT-SoVITS V2ProPlus 需要 CUDA 推理。RTX 30/40/50 系均可；
+  RTX 50 系（sm_120）必须用 cu128+ 版 torch。
+- Windows 侧 pipeline/orchestrator 是 **CPU 进程**（TTS 推理在 WSL 的 GPU 上），普通机器即可。
 - 显存建议 **8G+**。
 - 磁盘：GPT-SoVITS 权重 ~325MB + torch ~2GB + 各模型缓存，预留 20G+。
 - 内存 16G+。
 
 > 无 GPU 时：前端静态形象 + 聊天面板仍可显示，但**没有语音对话**（TTS 需要 GPU）。
 
-## 2. 前置
+## 2. WSL2 前置
 
 1. **WSL2 + Ubuntu 22.04/24.04**（`wsl --install -d Ubuntu-22.04`）。
 2. **Windows NVIDIA 驱动**：装好驱动后 WSL 内 `nvidia-smi` 应能显示显卡。
 3. **miniconda**：`https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/` 装到 `~/miniconda3`。
-4. **系统 python3.10+ 与 venv**：Ubuntu 22.04 自带 python3.10；缺 venv 模块先
-   `sudo apt install python3-venv python3-pip`。
-5. 建议把仓库放到 WSL 内（如 `~/VoxEMW`）。若放 `/mnt/c/...`，I/O 慢且模型加载可能卡。
 
-## 3. GPT-SoVITS V2ProPlus（手动，一次性）
+> 仓库本体放 Windows（如 `D:\...\yukino`）即可，无需再复制进 WSL。
+> `scripts/sync_to_wsl.sh` 的「开发副本 → WSL 运行副本」双副本流程已停用。
 
-语音合成靠它。分三块：conda 环境 / 代码 / 雪乃权重。
+## 3. Windows 侧：venv + 依赖（一次性）
 
-### 3.1 conda 环境（myenv + torch cu130）
+pipeline/orchestrator 在 Windows 跑，读仓库代码。仓库根建 venv，装最小依赖集
+（STT 走 DashScope API、TTS 走 :8899 HTTP，**不需要** voxcpm/funasr/tha3 等本地模型依赖）：
+
+```powershell
+cd "D:\...\yukino"          # 仓库根
+uv venv                     # 建 .venv（uv 管理，py3.12；无 uv 用 python -m venv .venv）
+# torch 用 CPU 版（Windows PyPI 默认即 CPU；TTS 推理不在本机）
+.\.venv\Scripts\python.exe -m pip install torch torchaudio -i https://mirrors.aliyun.com/pypi/simple
+.\.venv\Scripts\python.exe -m pip install speech-to-speech==0.2.11 silero-vad aiohttp websockets uvicorn fastapi pyyaml numpy scipy -i https://mirrors.aliyun.com/pypi/simple
+```
+
+- `speech-to-speech` 必须 **0.2.11**（pip 版；requirements.txt 里 git+ main 版仅 GPU 服务器用）
+- `silero-vad` 上游隐式依赖，必须手动补（坑 3）
+- 现役 `.venv` 是 uv 管理：`stop`/`status` 会按 cmdline 匹配 launcher shim + 解释器双进程
+
+## 4. WSL 侧：GPT-SoVITS V2ProPlus（手动，一次性）
+
+语音合成靠它，唯一留在 WSL 的服务。分三块：conda 环境 / 代码 / 雪乃权重。
+
+### 4.1 conda 环境（myenv + torch cu130）
 
 ```bash
 source ~/miniconda3/etc/profile.d/conda.sh
@@ -40,7 +59,7 @@ pip install torch==2.4.1 torchaudio==2.4.1 --index-url https://download.pytorch.
 
 > torch 版本以 GPT-SoVITS-V2ProPlus 代码要求的为准；RTX 50 系需 cu128+。
 
-### 3.2 GPT-SoVITS 代码
+### 4.2 GPT-SoVITS 代码
 
 ```bash
 cd ~
@@ -51,7 +70,7 @@ cd GPT-SoVITS
 
 > 国内 clone 慢可用镜像：`git clone https://ghproxy.com/https://github.com/jdc4429/GPT-SoVITS-V2ProPlus-Windows GPT-SoVITS`
 
-### 3.3 雪乃 V2ProPlus 权重
+### 4.3 雪乃 V2ProPlus 权重
 
 按 `docs/MODEL_DOWNLOAD.md` 从论坛下载模型包，解压到：
 
@@ -64,29 +83,16 @@ cd GPT-SoVITS
 
 权重目录名 `yukino` 是 `scripts/gptsovits_v2proplus_server.py` 写死的，勿改名。
 
-## 4. VoxEMW 依赖（自动化）
-
-在仓库根执行：
-
-```bash
-bash scripts/setup_wsl.sh
-```
-
-脚本会（幂等，重复执行安全）：
-1. 创建 `.venv`（python3.10+）
-2. 装 torch 2.8.0 cu128（RTX 50 系必需）
-3. 装 `requirements.txt`（默认阿里云镜像，`PIP_INDEX_URL` 可覆盖；
-   GitHub 被墙时 `speech-to-speech` 自动回退 pip 版 0.2.11）
-4. 补装 `silero-vad`、`tha3 --no-deps`（WSL 特殊坑，见 `docs/wsl2-troubleshooting.md` 坑 3/5）
-5. 生成 `.env.local` 并检查 API key
-6. 检查 GPT-SoVITS 三件套是否齐（第 3 步），缺失给指引
-
-只检查不安装：`bash scripts/setup_wsl.sh check`。
+装完可快速核对 WSL 侧环境：WSL 内仓库根执行 `bash scripts/setup_wsl.sh check`（检查
+GPT-SoVITS 三件套；脚本里的 `.venv`/torch cu128 段为 GPU 服务器/旧形态所用，本地已不用，
+报缺失忽略即可）。
 
 ## 5. 配置 API key（.env.local）
 
-```bash
-cp .env.example .env.local   # setup 脚本也会自动生成
+仓库根（Windows）复制生成：
+
+```powershell
+copy .env.example .env.local
 # 编辑 .env.local 填 key
 ```
 
@@ -98,40 +104,48 @@ cp .env.example .env.local   # setup 脚本也会自动生成
 
 > memory 不想配：`configs/assistant.yaml` 里 `memory.enabled: false`。
 
-## 6. 启动
+## 6. 启动（两步）
+
+先起 GPT-SoVITS，再起 Windows 两服务：
 
 ```bash
-bash scripts/start_assistant_wsl.sh
+# 第 1 步（WSL2 内，进仓库目录）：GPT-SoVITS :8899
+bash scripts/start_assistant_wsl.sh gptsovits
 ```
 
-脚本依次启动 GPT-SoVITS（:8899）→ 语音管线（:8765）→ orchestrator（:8000），
-等待各自就绪。浏览器打开：
+```powershell
+# 第 2 步（Windows PowerShell，任意目录）：pipeline + orchestrator
+powershell -File scripts\start_assistant_win.ps1
+```
+
+浏览器打开：
 
 ```text
 http://localhost:8000
 ```
 
-- 停止：`bash scripts/start_assistant_wsl.sh stop`
-- 状态：`bash scripts/start_assistant_wsl.sh status`
-- 日志：`logs/{gptsovits_v2proplus,pipeline,orchestrator}.log`
+- 停止：Windows `powershell -File scripts\start_assistant_win.ps1 stop`；
+  WSL `bash scripts/start_assistant_wsl.sh stop`（只影响 WSL 内进程）
+- 状态：Windows `...ps1 status`；WSL `bash scripts/start_assistant_wsl.sh status`
+- 日志：Windows `logs/{pipeline,orchestrator}.{out,err}.log`；
+  WSL `logs/gptsovits_v2proplus.log`
 
 ## 7. 排障速查
 
-- 启动顺序/就绪日志问题：`docs/wsl2-troubleshooting.md`（WSL 全套坑，重点坑 1/3/4/5/10）
+- WSL 全套坑：`docs/wsl2-troubleshooting.md`（坑 1/3/4/5/10 仍适用；坑 2/11 及 WSL 起三服务
+  的写法为 2026-08-19 前的旧形态，已过时）
 - 上游升级回归：`docs/upgrade-regression.md`
 - 权重缺失/放置：`docs/MODEL_DOWNLOAD.md`
-- 前端改动不生效（改了 web/ 但雪乃没变化）：坑 11——改的是仓库前端，WSL 运行副本
-  要同步（`//wsl.localhost/Ubuntu-22.04/home/<user>/VoxEMW/web/`）并升 `index.html` 的 `?v=`。
+- 前端改动不生效：orchestrator 在 Windows 直接读仓库 `web/`，改完硬刷新即可；仍旧则升
+  `index.html` 的 `?v=` 版本号。
 
 ## 8. 可覆盖路径（环境变量）
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `GPT_SOVITS_PY` | `~/miniconda3/envs/myenv/bin/python` | GPT-SoVITS 环境 python |
-| `GPT_SOVITS_ROOT` | `~/GPT-SoVITS` | GPT-SoVITS 代码根 |
+| `GPT_SOVITS_PY` | `~/miniconda3/envs/myenv/bin/python` | GPT-SoVITS 环境 python（WSL） |
+| `GPT_SOVITS_ROOT` | `~/GPT-SoVITS` | GPT-SoVITS 代码根（WSL） |
 | `VOXEMW_CONFIG` | `configs/assistant.yaml` | 主配置 |
-| `PIP_INDEX_URL` | 阿里云镜像 | pip 源 |
-| `SETUP_BASE_PY` | `python3` | 建 venv 的 python（setup 脚本用） |
 
 ## 相关链接
 

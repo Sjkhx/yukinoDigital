@@ -25,7 +25,11 @@ REQUIRED_BLOCKS = ("vad", "stt", "llm", "tts", "avatar")
 
 
 def load_dotenv(path: Path) -> None:
-    """最小 .env 加载（KEY=VALUE，# 注释，可选引号）。已存在的环境变量不覆盖。"""
+    """最小 .env 加载（KEY=VALUE，# 注释，可选引号）。
+
+    .env 里的 key 覆盖已存在的环境变量（2026-08-22：Windows 系统环境变量残留过期
+    DASHSCOPE_API_KEY 会遮住 .env.local 的正确 key，setdefault 导致 STT 401）。
+    """
     if not path.is_file():
         return
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -36,7 +40,7 @@ def load_dotenv(path: Path) -> None:
         key, value = key.strip(), value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
             value = value[1:-1]
-        os.environ.setdefault(key, value)
+        os.environ[key] = value
 
 
 def _resolve_path(value: str) -> Path:

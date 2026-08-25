@@ -145,3 +145,15 @@ def test_load_dotenv(tmp_path, monkeypatch):
 
     assert os.environ["TEST_A"] == "foo"
     assert os.environ["TEST_B"] == "bar baz"
+
+
+def test_load_dotenv_overrides_existing_env(tmp_path, monkeypatch):
+    # 系统环境变量残留过期 key 会遮住 .env.local 的正确 key（2026-08-22：STT 401）。
+    # .env.local 是配置唯一来源，必须覆盖已存在的环境变量。
+    env_file = tmp_path / ".env"
+    env_file.write_text("DASHSCOPE_API_KEY=sk-correct\n", encoding="utf-8")
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "sk-stale")
+    load_dotenv(env_file)
+    import os
+
+    assert os.environ["DASHSCOPE_API_KEY"] == "sk-correct"

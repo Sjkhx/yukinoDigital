@@ -3,6 +3,10 @@
 升级 huggingface/speech-to-speech 时按此单执行，预估 1.5-2 小时。
 原则：**现役 `.venv` 永不动**，新环境验证通过再扶正；任何阶段红灯即回滚。
 
+> **运行位置（2026-08-19 起）**：pipeline/orchestrator 跑在 **Windows**，现役 venv 是仓库根
+> `.venv`（uv 管理、torch CPU、s2s 钉 0.2.11）。本单的 `.venv-next` 隔离与全部验收都在
+> Windows 侧做；GPT-SoVITS（WSL）与上游无关，不受影响。
+
 ## 我们的自定义接触面（升级风险点）
 
 - `voxemw/pipeline/launch.py`：monkeypatch `get_stt_handler` / `get_tts_handler` 工厂

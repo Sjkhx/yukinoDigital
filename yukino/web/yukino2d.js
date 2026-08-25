@@ -279,8 +279,12 @@
             motion.setFadeInTime(1.5);   // 姿势淡入与手臂过渡时长对齐，一次平滑到位
             motion.setFadeOutTime(1.5);
           } else {
-            motion.setFadeInTime(1.4);   // 动作切入也放慢
-            motion.setFadeOutTime(1.4);
+            // 动作淡入淡出默认 1.4s 柔切；短动作 fade 不能长过动作本身，否则动作被
+            // 淡入吞掉只露半个（yuk_ikari 0.73s / yuk_sweat 0.67s）。时长 ≥1.4s 维持原样。
+            const mdur = (motionData && motionData.Meta && motionData.Meta.Duration) || 0;
+            const fade = (mdur > 0 && mdur < 1.4) ? mdur * 0.3 : 1.4;
+            motion.setFadeInTime(fade);
+            motion.setFadeOutTime(fade);
           }
         } catch (e) {
           console.warn("[yukino2d] 调整 motion 淡入淡出失败:", e);
@@ -640,9 +644,15 @@
      *   {type:"expression", value} / {type:"motion", value}
      *   {type:"pose", value} / {type:"pause", ms}
      * motion 步骤按作者预置时长（Meta.Duration，秒）推进，并在结尾提前 fadeOut
-     * 重叠启动下一步（衔接过渡保留，不硬切）。编排期间暂停姿势自动轮换；
+     * 重叠启动下一步（衔接过渡保留，不硬切）；短动作（比 1.4s fade 还短）给足
+     * 停留，别被淡入吞掉、也别瞬间切走。编排期间暂停姿势自动轮换；
      * 新一次调用会打断上一轮。 */
     let choreoId = 0;
+    // 衔接节奏：长动作预留 fadeOut 重叠衔接下一步（不硬切）；短动作（≤1.4s fade）
+    // 给足停留——否则 wait 被 clamp 成 0、下一步瞬间切入、动作只露半个
+    // （2026-08-22 修：yuk_ikari 0.73s / yuk_sweat 0.67s）。
+    const CHOREO_FADE_MS = 1400;      // 与 createMotion 的动作 fadeOut 对齐
+    const CHOREO_MIN_HOLD_MS = 700;   // 短动作最短停留：动作看得清 + 衔接有呼吸感
     function waitMs(ms) {
       return new Promise((res) => setTimeout(res, Math.max(0, ms)));
     }
@@ -676,7 +686,7 @@
               await waitMs(500);
             } else if (s === "motion") {
               const dur = await playMotionChoreo(step.value);
-              if (dur > 0) await waitMs(Math.max(0, dur * 1000 - 1400));  // 留 1.4s fadeOut 重叠
+              if (dur > 0) await waitMs(Math.max(dur * 1000 - CHOREO_FADE_MS, CHOREO_MIN_HOLD_MS));
             } else if (s === "pose") {
               await setPose(step.value);
               await waitMs(400);

@@ -160,7 +160,8 @@ class GPTSovitsTTSHandler(BaseHandler[TTSIn, TTSOut]):
             tail = ""
             if self._bilingual is not None:
                 if self._bilingual.mode == "none":
-                    tail = self._bilingual.buf.strip()  # 双语兜底：整段回退合成
+                    # 双语兜底：整段回退合成（先剥掉【演出】段，指令不朗读）
+                    tail = BilingualFlow.strip_perf(self._bilingual.buf).strip()
                 self._bilingual.reset()
                 # BUGFIX(2026-08-16): 双语模式下 _buf/_pending 仍可能残留
                 # MAX_CHARS 硬切余量（如「無駄」被切成「無」+「駄…」）。若不
@@ -211,7 +212,7 @@ class GPTSovitsTTSHandler(BaseHandler[TTSIn, TTSOut]):
 
         # 双语模式：只取「【日语】」段增量
         if self._bilingual is not None:
-            ja_d, _ = self._bilingual.feed(text)
+            ja_d, _, _ = self._bilingual.feed(text)
             if not ja_d.strip():
                 return
             text = ja_d

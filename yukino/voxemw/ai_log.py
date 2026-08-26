@@ -22,6 +22,46 @@ PERF_STEP_RE = re.compile(
 
 PERF_MARKER = "【演出】"
 
+# 步骤值白名单（与前端 yukino2d.js 的解析能力对齐）：
+# - motion：基础动作 1a~4c（字母=姿态底座）、特效 sweat/uruuru/yami/hatena/ikari/mayu
+#   及其英文别名（前端 alias 表）；纯数字按 Action 序号放行（前端按 model3.json 顺序取）
+# - expression：yuk_em0~13 对应数字 0~13，或人设英文别名（em 文件名不含语义词，
+#   前端查 EXPRESSION_ALIASES 表解析）
+# - pose：A/B/C 或 1/2/3，可带 pose 前缀
+KNOWN_MOTIONS = {
+    "1a", "2a", "3a", "4a", "1b", "2b", "3b", "4b", "1c", "2c", "3c", "4c",
+    "sweat", "uruuru", "yami", "hatena", "ikari", "mayu",
+    "angry", "confused", "sparkle", "dark", "eyebrow",
+}
+KNOWN_EXPRESSIONS = {
+    "calm", "smile", "serious", "cold", "helpless", "awkward",
+    "scrutinize", "sidelong", "surprised", "displeased", "troubled",
+    "shy", "blush", "chuckle",
+}
+_DIGITS_RE = re.compile(r"^\d+$")
+_POSE_VALUE_RE = re.compile(r"^(?:pose)?[a-c1-3]$", re.IGNORECASE)
+_PAUSE_VALUE_RE = re.compile(r"^\d{1,5}$")
+
+
+def _step_drop_reason(typ: str, val: str) -> str | None:
+    """步骤值不在白名单时返回丢弃原因，合法返回 None。"""
+    v = (val or "").strip().lower()
+    if typ == "pause":
+        return None if _PAUSE_VALUE_RE.fullmatch(v) else "停顿不是整数毫秒"
+    if typ == "motion":
+        if _DIGITS_RE.fullmatch(v) or v in KNOWN_MOTIONS:
+            return None
+        return "未知动作"
+    if typ == "expression":
+        if (_DIGITS_RE.fullmatch(v) and 0 <= int(v) <= 13) or v in KNOWN_EXPRESSIONS:
+            return None
+        return "未知表情"
+    if typ == "pose":
+        if _POSE_VALUE_RE.fullmatch(v):
+            return None
+        return "未知姿态"
+    return "未知类型"
+
 _ai_log_counter = 0
 
 
@@ -31,19 +71,29 @@ def resolve_ai_log_dir() -> Path:
     return Path(os.environ.get("VOXEMW_AI_LOG_DIR", "") or default)
 
 
-def parse_perf_directive(text: str) -> list[dict]:
-    """解析【演出】指令为步骤列表：[{type, value}, ...]。坏步骤跳过。"""
+def parse_perf_directive_verbose(text: str) -> tuple[list[dict], list[str]]:
+    """解析【演出】指令 → (合法步骤列表, 丢弃记录列表)。
+
+    步骤值为 [{type, value}, ...]；丢弃记录形如 "motion:摇头 (未知动作)"，
+    供 ai_log 观察人设格式漂移（此前坏步骤在前端静默丢，后端无痕）。"""
     steps: list[dict] = []
+    dropped: list[str] = []
     for m in PERF_STEP_RE.finditer(text):
         typ, val = m.group(1), m.group(2)
+        reason = _step_drop_reason(typ, val)
+        if reason:
+            dropped.append(f"{typ}:{val} ({reason})")
+            continue
         if typ == "pause":
-            try:
-                steps.append({"type": typ, "value": int(val)})
-            except ValueError:
-                continue  # 停顿值不是数字：跳过该步骤
+            steps.append({"type": typ, "value": int(val)})
         else:
             steps.append({"type": typ, "value": val})
-    return steps
+    return steps, dropped
+
+
+def parse_perf_directive(text: str) -> list[dict]:
+    """解析【演出】指令为步骤列表：[{type, value}, ...]。坏步骤跳过。"""
+    return parse_perf_directive_verbose(text)[0]
 
 
 # 编排步骤开头：区分「行内引用【演出】」（后跟散文）和「真演出段」（后跟步骤）
@@ -79,6 +129,7 @@ def write_ai_log(
     perf: str,
     steps: list,
     conn_id: str = "",
+    dropped: list | None = None,
 ) -> None:
     """写一份 AI 调用日志（每次调用一个文件）。失败只告警，不阻断主流程。"""
     global _ai_log_counter
@@ -105,6 +156,8 @@ def write_ai_log(
             "--- 编排步骤（vox.choreo） ---",
             str(steps) if steps else "(无)",
         ]
+        if dropped:
+            lines += ["", "--- 丢弃的演出步骤 ---"] + dropped
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         logger.info("AI 调用日志已写入 %s", path)
     except Exception as e:

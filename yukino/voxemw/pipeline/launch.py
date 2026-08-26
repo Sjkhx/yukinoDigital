@@ -159,7 +159,7 @@ def _patch_bilingual_transcript() -> None:
     from speech_to_speech.api.openai_realtime.handlers.response import ResponseHandler
     from speech_to_speech.pipeline.events import AssistantTextEvent
 
-    from voxemw.ai_log import parse_perf_directive, write_ai_log
+    from voxemw.ai_log import parse_perf_directive_verbose, write_ai_log
     from voxemw.pipeline.tts_voxcpm import BilingualFlow
 
     # 自定义 ServerEvent：router 用 event.model_dump() 序列化，任意 pydantic 模型可直接下发
@@ -218,10 +218,12 @@ def _patch_bilingual_transcript() -> None:
                     response_id="",
                     transcript=tail,
                 )]
-            # 演出编排：解析【演出】段 → vox.choreo（排在 response.done 之前）
+            # 演出编排：解析【演出】段 → vox.choreo（排在 response.done 之前）。
+            # 只在正常完成时下发：打断/失败轮次的半截演出段播出去，
+            # 雪乃会在用户说话时继续比划（cancelled=incomplete 内容不应有演出）
             if flow.perf_buf.strip():
-                steps = parse_perf_directive(flow.perf_buf)
-                if steps:
+                steps, _ = parse_perf_directive_verbose(flow.perf_buf)
+                if steps and status == "completed":
                     choreo = [ChoreoEvent(steps=steps)]
                     logger.info("vox.choreo 下发: %s", steps)
             # 每次 AI 调用写独立调试日志。同步写 VOXEMW_AI_LOG_DIR（可能指到
@@ -231,14 +233,18 @@ def _patch_bilingual_transcript() -> None:
             if raw.strip():
                 full = BilingualFlow()  # 非流式整段切分：一次还原 日语/译文/演出
                 ja_full, zh_full, perf_full = full.feed(raw)
-                steps_full = parse_perf_directive(perf_full) if perf_full.strip() else []
+                if perf_full.strip():
+                    steps_full, dropped_full = parse_perf_directive_verbose(perf_full)
+                else:
+                    steps_full, dropped_full = [], []
                 try:
                     asyncio.get_running_loop().run_in_executor(
                         None, write_ai_log, "pipeline", raw, ja_full, zh_full,
-                        perf_full, steps_full, conn_id,
+                        perf_full, steps_full, conn_id, dropped_full,
                     )
                 except RuntimeError:
-                    write_ai_log("pipeline", raw, ja_full, zh_full, perf_full, steps_full, conn_id)
+                    write_ai_log("pipeline", raw, ja_full, zh_full,
+                                 perf_full, steps_full, conn_id, dropped_full)
             self._vox_ai_raw = []
             flow.reset()  # 轮结束（含打断）重置切分状态，防跨轮错乱
         return choreo + orig_finish(self, conn_id, status, reason, **kwargs) + extra

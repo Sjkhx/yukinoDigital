@@ -798,6 +798,8 @@ const realtimeHandlers = {
   "input_audio_buffer.speech_started"() {
     // 用户开口（打断）：本地播放队列清空，助手文本行封口
     flushPlayback();
+    // 打断进行中的演出编排：用户说话时雪乃不再继续低头摇头比划（目光跟随随之恢复）
+    if (yukino2d) yukino2d.cancelChoreography();
     assistantJaText = "";
     frameQueue.length = 0;  // 视频帧队列一并清空，嘴型跟着归位
     idleQueue.length = 0;
@@ -920,7 +922,13 @@ function handleTextMessage(data) {
   if (event.type === "vox.choreo" && Array.isArray(event.steps)) {
     // LLM 自带的【演出】编排（管线或 task-done 解析后下发）：按顺序播 表情/动作/姿态/停顿。
     // 管线对话里它排在 response.done 之前 → 本轮跳过默认情绪演出；
-    // task-done 编排没有后续 response.done，3s 后自动清除，避免误吞下一轮
+    // task-done 编排没有后续 response.done，3s 后自动清除，避免误吞下一轮。
+    // 打断竞态：choreo 出发后用户已开口（listening/thinking）→ 直接丢弃不播，
+    // 等新回复自己的编排接管
+    if (avatarState === "listening" || avatarState === "thinking") {
+      console.info("[vox.choreo] 用户已在说话，丢弃迟到编排");
+      return;
+    }
     if (yukino2d) {
       yukino2d.playChoreography(event.steps);
       aiChoreoPending = true;

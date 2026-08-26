@@ -57,7 +57,7 @@ import websockets
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from voxemw.ai_log import parse_perf_directive, split_perf_section, write_ai_log  # noqa: E402
+from voxemw.ai_log import parse_perf_directive_verbose, split_perf_section, write_ai_log  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -243,10 +243,14 @@ def yukino_task_done_reply(
             ja = m.group(1).strip()
         else:
             ja = content
-    # 【演出】指令段：从译文后拆出（不显示、不朗读），解析成编排步骤 + 写调试日志
+    # 【演出】指令段：从译文后拆出（不显示、不朗读），解析成编排步骤 + 写调试日志。
+    # 白名单外的值在后端丢弃并记进日志（此前坏步骤到前端才静默丢，漂移不可见）
     zh, perf = split_perf_section(zh)
-    steps = parse_perf_directive(perf) if perf else []
-    write_ai_log("taskdone", content, ja, zh, perf, steps, conn_id)
+    if perf:
+        steps, dropped = parse_perf_directive_verbose(perf)
+    else:
+        steps, dropped = [], []
+    write_ai_log("taskdone", content, ja, zh, perf, steps, conn_id, dropped)
     return ja, zh, perf, steps
 
 

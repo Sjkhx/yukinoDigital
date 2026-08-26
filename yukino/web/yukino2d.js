@@ -15,6 +15,8 @@
  *     setAutoPose(on),    // 待机姿势自动轮换（手动选姿态后关）
  *     talkDemo(sec),      // 模拟说话口型（无需音频）
  *     playChoreography(steps),  // 动作编排：按作者预置时长顺序播 表情/动作/姿势/停顿
+ *                               // （姿态字母自动衔接：动作后缀与当前姿态不一致时先换姿）
+ *     cancelChoreography(),     // 打断进行中的编排（用户插话时调）
  *     listMotions(), listExpressions(),
  *   }
  *     model 可覆盖 model3.json URL；默认制服 yukino_seihuku，?outfit=shihuku 用私服
@@ -318,12 +320,13 @@
 
     function startPoseTransition(group) {
       if (!state.ready || !model || !model.internalModel) return false;
-      if (state.poseTransition) return false;
       const target = POSE_ARM_TARGETS[group];
       if (!target) return false;
       const from = readArmParams();
       if (!from) return false;
       const now = performance.now() / 1000;
+      // 新过渡取代旧过渡（而非拒绝）：连切两个姿势时手臂从当前值直接转向新目标，
+      // 否则第二次切换会被静默吞掉、idle 组停在上一个字母上
       state.poseTransition = {
         from,
         to: target,
@@ -406,12 +409,21 @@
       return -1;
     }
 
+    // 表情文件名是 yuk_em0~13.exp3.json，不含语义词；人设的英文别名必须查表映射，
+    // 否则按文件名子串搜不到（如 expression:surprised 恒丢步）
+    const EXPRESSION_ALIASES = {
+      calm: 0, smile: 1, serious: 2, cold: 3, helpless: 4, awkward: 5,
+      scrutinize: 6, sidelong: 7, surprised: 8, displeased: 9, troubled: 10,
+      shy: 11, blush: 12, chuckle: 13,
+    };
+
     function expressionIndexFromName(name) {
       if (typeof name === "number") return name;
       const exps = getExpressionDefs();
       const raw = String(name || "").toLowerCase().replace(/\.exp3\.json$/, "");
       if (/^\d+$/.test(raw)) return parseInt(raw, 10);
       const key = raw.replace(/^yuk_/, "");
+      if (EXPRESSION_ALIASES[key] !== undefined) return EXPRESSION_ALIASES[key];
       for (let i = 0; i < exps.length; i++) {
         const file = String(exps[i].File || exps[i].file || "").toLowerCase();
         if (file.includes(key)) return i;
@@ -463,6 +475,8 @@
         console.warn("[yukino2d] 未知姿态:", name);
         return false;
       }
+      // 记录当前姿态序号：cyclePose 自动轮换与编排的字母衔接都以此为准
+      if (/^[123]$/.test(num)) state.poseIndex = parseInt(num, 10) - 1;
       // 非 immediate：先从当前手臂位置 ease-out 旋转到目标姿势，再启动预设 motion
       if (!immediate) {
         return startPoseTransition(group);
@@ -653,8 +667,28 @@
     // （2026-08-22 修：yuk_ikari 0.73s / yuk_sweat 0.67s）。
     const CHOREO_FADE_MS = 1400;      // 与 createMotion 的动作 fadeOut 对齐
     const CHOREO_MIN_HOLD_MS = 700;   // 短动作最短停留：动作看得清 + 衔接有呼吸感
+    const CHOREO_POSE_LEAD_MS = 400;  // 隐式换姿态后的呼吸间隔（动作淡入与手臂过渡重叠推进）
+    const POSE_LETTER_BY_INDEX = ["a", "b", "c"];  // state.poseIndex → 姿态字母（Pose1/2/3 = A/B/C）
     function waitMs(ms) {
       return new Promise((res) => setTimeout(res, Math.max(0, ms)));
+    }
+    /* 动作所属的基础姿态字母：从 model3.json 的实际文件名取（yuk_1b_… / yuk_poseA_…），
+     * 比 LLM 输出的字符串可靠，数字 index 也一并覆盖。特效/姿态过渡文件无字母 → null。 */
+    function motionBaseLetter(name) {
+      const idx = motionIndexFromName(name);
+      const actions = getActionMotions();
+      if (idx < 0 || !actions[idx]) return null;
+      const file = String(actions[idx].File || actions[idx].file || "").toLowerCase();
+      let m = file.match(/(?:^|[^0-9a-z])[1-4]([abc])_/) || file.match(/_pose([abc])_/);
+      return m ? m[1] : null;
+    }
+    /* pose: 步骤值（A/a/poseB/1…）→ 姿态字母；不认识 → null */
+    function poseLetterFromName(v) {
+      const k = String(v || "").toLowerCase().replace(/^pose/, "");
+      if (k === "1") return "a";
+      if (k === "2") return "b";
+      if (k === "3") return "c";
+      return /^[abc]$/.test(k) ? k : null;
     }
     async function playMotionChoreo(name) {
       if (!state.ready || !model) return 0;
@@ -676,8 +710,12 @@
       state.autoPose = false;        // 编排期间不自动换姿势
       state.choreoRunning = true;    // 编排期间目光跟随让位（避免与动作打架）
       try {
+        // 当前基础姿态：动作后缀字母（1b→b）与它不一致时，先切待机姿势再播——
+        // 每个 Action 动作自带该字母底座的手臂曲线，跨字母直接连播会手臂来回漂移
+        //（播到 A 底座 → idle 拉回 B → 再播 C 底座……），人设的「字母一致」规则在此代码化
+        let curPose = POSE_LETTER_BY_INDEX[state.poseIndex] || null;
         for (const step of steps) {
-          if (id !== choreoId || state.destroyed) break;   // 新编排打断旧编排
+          if (id !== choreoId || state.destroyed) break;   // 新编排/打断取消旧编排
           if (!step || typeof step !== "object") continue;
           const s = step.type;
           try {
@@ -685,10 +723,18 @@
               await setExpression(step.value);
               await waitMs(500);
             } else if (s === "motion") {
+              const want = motionBaseLetter(step.value);
+              if (want && want !== curPose) {
+                await setPose(want);   // 手臂 ease 与 idle 组切换同时进行
+                curPose = want;
+                await waitMs(CHOREO_POSE_LEAD_MS);
+              }
               const dur = await playMotionChoreo(step.value);
               if (dur > 0) await waitMs(Math.max(dur * 1000 - CHOREO_FADE_MS, CHOREO_MIN_HOLD_MS));
             } else if (s === "pose") {
               await setPose(step.value);
+              const letter = poseLetterFromName(step.value);
+              if (letter) curPose = letter;
               await waitMs(400);
             } else if (s === "pause") {
               await waitMs(step.ms || 0);
@@ -702,6 +748,14 @@
         state.autoPose = wasAuto;
       }
       return true;
+    }
+
+    /* 打断当前编排：用户插话（speech_started）时调用。递增 choreoId 让循环在
+     * 步骤边界退出；正在淡出的动作自然收尾不硬切，目光跟随立即恢复，
+     * autoPose 由循环 finally 恢复。无编排时调用无害。 */
+    function cancelChoreography() {
+      choreoId += 1;
+      state.choreoRunning = false;
     }
 
 
@@ -896,6 +950,7 @@
       setAutoPose,
       talkDemo,
       playChoreography,
+      cancelChoreography,
       listMotions,
       listExpressions,
       destroy() {
